@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "67375900904",
+    "firebase_url": "https://deepfakekiller-default-rtdb.firebaseio.com",
+    "project_id": "deepfakekiller",
+    "storage_bucket": "deepfakekiller.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:67375900904:android:e60830c16003f46b72815d",
+        "android_client_info": {
+          "package_name": "com.example.contact"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB9F8xp0g2duVlMflBa0Bq_5SHRDpKrh4I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

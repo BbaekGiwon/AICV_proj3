@@ -1,0 +1,39 @@
+name: contact
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  agora_rtc_engine: ^6.5.3
+  permission_handler: ^11.0.1
+  cupertino_icons: ^1.0.8
+
+  # ✅ 최종적으로 사용할 TFLite 패키지입니다.
+  tflite_v2: ^1.0.0
+  path_provider: ^2.0.15  # ✅ 이 줄을 꼭 추가해주세요!
+  google_mlkit_face_detection: ^0.13.1
+  image: ^4.5.4
+  firebase_core: ^4.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/efficientnet_v02.tflite
+    - assets/efficientnet_v02_labels.txt
+
+flutter_native_splash:
+  color: "#448AFF"
