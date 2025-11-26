@@ -48,7 +48,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   Rect? _faceRect;
   Size? _snapshotImageSize;
 
-  // ✅ 작은 로컬 뷰 화면의 위치를 저장하기 위한 변수
   Offset _localViewPosition = const Offset(20.0, 40.0);
 
   @override
@@ -113,7 +112,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   void _startDetectionLoop() {
     _detectionTimer?.cancel();
-    // ✅ 탐지 주기를 1.5초에서 1초로 변경
     _detectionTimer =
         Timer.periodic(const Duration(milliseconds: 1000), (_) async {
       if (_remoteUid != null && _isDetectionOn && !_isProcessing) {
@@ -486,7 +484,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                   ),
                 ),
         ),
-        // ✅ 작은 로컬 뷰를 GestureDetector로 감싸 드래그 가능하게 만듭니다.
         Positioned(
           left: _localViewPosition.dx,
           top: _localViewPosition.dy,
@@ -500,27 +497,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               width: 120,
               height: 160,
               child: _isVideoOn
-                  ? Stack(
-                      children: [
-                        AgoraVideoView(
-                          controller: VideoViewController(
-                            rtcEngine: _agoraService.engine!,
-                            canvas: const VideoCanvas(uid: 0),
-                          ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: InkWell(
-                            onTap: _onSwitchCamera,
-                            child: CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Colors.black.withOpacity(0.5),
-                              child: const Icon(Icons.cameraswitch, color: Colors.white, size: 14),
-                            ),
-                          ),
-                        ),
-                      ],
+                  // ✅ Stack을 제거하고 AgoraVideoView만 남깁니다.
+                  ? AgoraVideoView(
+                      controller: VideoViewController(
+                        rtcEngine: _agoraService.engine!,
+                        canvas: const VideoCanvas(uid: 0),
+                      ),
                     )
                   : Container(
                 color: Colors.grey[900],
