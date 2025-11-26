@@ -52,3 +52,7 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.3")
+}
