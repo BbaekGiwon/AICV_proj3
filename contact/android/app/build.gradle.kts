@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
-    id("com.google.gms.google-services")
+    // ✅ Firebase를 사용하지 않으므로 제거
+    // id("com.google.gms.google-services") 
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -40,6 +41,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.contact"
+        // ✅ minSdkVersion을 21로 명시적 설정
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

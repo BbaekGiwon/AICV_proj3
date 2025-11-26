@@ -1,16 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
 
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
+// ✅ Firebase를 사용하지 않으므로 main 함수를 동기식으로 변경
+void main() {
+  // ✅ Firebase 관련 코드 모두 제거
   runApp(const MyApp());
 }
 

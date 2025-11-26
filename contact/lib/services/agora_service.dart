@@ -44,14 +44,19 @@ class AgoraService {
       ),
     );
 
-    await engine!.enableVideo();
-    await engine!.startPreview();
+    // ✅ 아래 두 줄을 제거하여 초기화 순서를 변경합니다.
+    // await engine!.enableVideo();
+    // await engine!.startPreview();
   }
 
   Future<void> joinChannel({
     required String channelId,
     required int uid,
   }) async {
+    // ✅ 채널 접속 전에 토큰과 비디오 옵션을 설정
+    await engine?.enableVideo();
+    await engine?.startPreview();
+    
     await engine!.joinChannel(
       token: AGORA_TOKEN,
       channelId: channelId,

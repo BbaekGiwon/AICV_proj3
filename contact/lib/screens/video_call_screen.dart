@@ -108,11 +108,16 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       },
     );
 
+    // ✅ 초기화 순서 변경: 채널 접속 전에 비디오 활성화
+    await _agoraService.engine?.enableVideo();
+    await _agoraService.engine?.startPreview();
+
     await _agoraService.joinChannel(
       channelId: widget.phoneNumber,
       uid: _myUid,
     );
   }
+
 
   void _startCallTimer() {
     _callStartTime = DateTime.now();
@@ -568,7 +573,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     AgoraVideoView(
                       controller: VideoViewController(
                         rtcEngine: _agoraService.engine!,
-                        canvas: const VideoCanvas(uid: 0), // ✅ 여기를 수정했습니다.
+                        canvas: const VideoCanvas(uid: 0),
                       ),
                     ),
                     Positioned(
