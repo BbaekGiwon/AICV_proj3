@@ -179,7 +179,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
   }
 
-  // ✅ `saveRecord`의 기본값을 false로 변경하고, 실제 통화가 시작되었는지 여부로 저장 결정
   Future<void> _leaveChannel() async {
     if (_hasEnded) return;
     _hasEnded = true;
@@ -188,7 +187,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _stopDetectionLoop();
     await _voiceDetectService.stopDetection();
 
-    // ✅ 실제 통화가 시작되었을 때만 기록 저장 (상대방이 접속했을 때)
     if (_remoteUid != null) {
       callHistory.add(
         CallRecord(
@@ -455,13 +453,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: _buildBody(),
-        // ✅ 항상 하단 네비게이션 바가 보이도록 수정
         bottomNavigationBar: _buildBottomNavigationBar(),
       ),
     );
   }
 
-  // ✅ 하단 네비게이션 바를 만드는 위젯
   Widget _buildBottomNavigationBar() {
     return Container(
       color: Colors.black,
@@ -475,7 +471,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
-  // ✅ 연결 중일 때 (통화 종료 버튼만 보임)
   Widget _buildConnectingControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -484,13 +479,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           icon: Icons.call_end,
           label: '취소',
           color: Colors.red,
-          onTap: _leaveChannel, // 기록 없이 종료
+          onTap: _leaveChannel, 
         ),
       ],
     );
   }
 
-  // ✅ 연결된 후 (모든 버튼 보임)
   Widget _buildConnectedControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -521,7 +515,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           icon: Icons.call_end,
           label: '종료',
           color: Colors.red,
-          onTap: _leaveChannel, // 기록과 함께 종료
+          onTap: _leaveChannel, 
         ),
       ],
     );
@@ -574,7 +568,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
                     AgoraVideoView(
                       controller: VideoViewController(
                         rtcEngine: _agoraService.engine!,
-                        canvas: const Canvas(uid: 0),
+                        canvas: const VideoCanvas(uid: 0), // ✅ 여기를 수정했습니다.
                       ),
                     ),
                     Positioned(
