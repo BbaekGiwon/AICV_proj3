@@ -76,10 +76,10 @@ class VoiceDetectHandler(
         if (isRecording) return
 
         try {
+            // ✅ setNumThreads(2) 옵션 제거
             val options = AudioClassifier.AudioClassifierOptions.builder()
                 .setScoreThreshold(probabilityThreshold)
                 .setMaxResults(1) // 가장 확률 높은 1개 결과만 받기
-                .setNumThreads(2) // 2개의 쓰레드로 추론
                 .build()
 
             audioClassifier = AudioClassifier.createFromFileAndOptions(context, modelPath, options)
