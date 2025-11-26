@@ -1,24 +1,7 @@
 plugins {
     id("com.android.application")
-    // ✅ Firebase를 사용하지 않으므로 제거
-    // id("com.google.gms.google-services") 
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
-}
-
-// ✅ TensorFlow Lite 라이브러리 버전 충돌 최종 해결
-configurations.all {
-    resolutionStrategy {
-        // 1. 다른 라이브러리(litert-api)를 공식 tensorflow-lite-api로 강제 대체
-        dependencySubstitution {
-            substitute(module("com.google.ai.edge.litert:litert-api")).using(module("org.tensorflow:tensorflow-lite-api:2.10.0"))
-        }
-        // 2. 모든 tensorflow-lite 관련 라이브러리 버전을 하나로 강제 통일
-        force("org.tensorflow:tensorflow-lite:2.10.0")
-        force("org.tensorflow:tensorflow-lite-gpu:2.10.0")
-        force("org.tensorflow:tensorflow-lite-api:2.10.0")
-        force("org.tensorflow:tensorflow-lite-support:0.4.2") // 음성 탐지 라이브러리와 호환되는 버전
-    }
 }
 
 android {
@@ -41,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.contact"
-        // ✅ minSdkVersion을 21로 명시적 설정
+        // ✅ 최소 SDK 버전을 21로 유지하는 것이 안정성에 좋습니다.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -59,6 +42,5 @@ flutter {
     source = "../.."
 }
 
-dependencies {
-    implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.3")
-}
+// ✅ 음성 탐지 관련 의존성을 모두 제거했습니다.
+dependencies {}

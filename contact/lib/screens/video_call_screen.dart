@@ -5,13 +5,11 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../models/call_record.dart';
 import '../services/agora_service.dart';
 import '../services/detection_service.dart';
 import '../services/permission_service.dart';
-import '../services/voice_detect_services.dart';
 import '../utils/timer_formatter.dart';
 
 class VideoCallScreen extends StatefulWidget {
@@ -26,14 +24,12 @@ class VideoCallScreen extends StatefulWidget {
 class _VideoCallScreenState extends State<VideoCallScreen> {
   final AgoraService _agoraService = AgoraService();
   final DetectionService _detectionService = DetectionService();
-  final VoiceDetectService _voiceDetectService = VoiceDetectService.instance;
 
   bool _joined = false;
   int? _remoteUid;
   bool _isMuted = false;
   bool _isVideoOn = true;
-  bool _isVideoDetectionOn = true;
-  bool _isVoiceDetectionOn = false;
+  bool _isDetectionOn = true;
 
   late final int _myUid;
 
@@ -46,32 +42,20 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   bool _isProcessing = false;
   bool _hasEnded = false;
 
-  // 영상 탐지 관련 변수
-  double _lastVideoFakeProbability = 0.0;
+  double _lastDetectionProbability = 0.0;
   int _deepfakeDetections = 0;
+
   Rect? _faceRect;
   Size? _snapshotImageSize;
 
-  // 음성 탐지 관련 변수
-  StreamSubscription? _voiceFakeProbSub;
-  double _lastVoiceFakeProbability = 0.0;
+  // ✅ 작은 로컬 뷰 화면의 위치를 저장하기 위한 변수
+  Offset _localViewPosition = const Offset(20.0, 40.0);
 
   @override
   void initState() {
     super.initState();
     _myUid = Random().nextInt(999999999);
     _initServices();
-    _initVoiceDetection();
-  }
-
-  void _initVoiceDetection() {
-    _voiceFakeProbSub = _voiceDetectService.fakeProbabilityStream.listen((prob) {
-      if (mounted) {
-        setState(() {
-          _lastVoiceFakeProbability = prob;
-        });
-      }
-    });
   }
 
   Future<void> _initServices() async {
@@ -94,12 +78,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         if (!_timerStarted) {
           _timerStarted = true;
           _startCallTimer();
-          _lastVideoFakeProbability = 0.0;
+          _lastDetectionProbability = 0.0;
           _faceRect = null;
           _snapshotImageSize = null;
         }
 
-        if (_isVideoDetectionOn) {
+        if (_isDetectionOn) {
           _startDetectionLoop();
         }
       },
@@ -108,7 +92,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       },
     );
 
-    // ✅ 초기화 순서 변경: 채널 접속 전에 비디오 활성화
     await _agoraService.engine?.enableVideo();
     await _agoraService.engine?.startPreview();
 
@@ -117,7 +100,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       uid: _myUid,
     );
   }
-
 
   void _startCallTimer() {
     _callStartTime = DateTime.now();
@@ -131,14 +113,13 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   void _startDetectionLoop() {
     _detectionTimer?.cancel();
+    // ✅ 탐지 주기를 1.5초에서 1초로 변경
     _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 1500), (_) async {
-          if (_remoteUid != null &&
-              _isVideoDetectionOn &&
-              !_isProcessing) {
-            await _agoraService.takeSnapshot(_remoteUid!);
-          }
-        });
+        Timer.periodic(const Duration(milliseconds: 1000), (_) async {
+      if (_remoteUid != null && _isDetectionOn && !_isProcessing) {
+        await _agoraService.takeSnapshot(_remoteUid!);
+      }
+    });
   }
 
   void _stopDetectionLoop() {
@@ -159,14 +140,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           result.imageWidth == 0 ||
           result.imageHeight == 0) {
         setState(() {
-          _lastVideoFakeProbability = 0.0;
+          _lastDetectionProbability = 0.0;
           _faceRect = null;
           _snapshotImageSize = null;
         });
       } else {
         final fakeProb = result.fakeProb;
         setState(() {
-          _lastVideoFakeProbability = fakeProb;
+          _lastDetectionProbability = fakeProb;
           _faceRect = result.faceRect;
           _snapshotImageSize =
               Size(result.imageWidth.toDouble(), result.imageHeight.toDouble());
@@ -190,7 +171,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
     _callTimer?.cancel();
     _stopDetectionLoop();
-    await _voiceDetectService.stopDetection();
 
     if (_remoteUid != null) {
       callHistory.add(
@@ -199,7 +179,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           startTime: _callStartTime,
           duration: _duration,
           deepfakeDetections: _deepfakeDetections,
-          highestProbability: _lastVideoFakeProbability,
+          highestProbability: _lastDetectionProbability,
         ),
       );
     }
@@ -212,37 +192,23 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
   }
 
-
-  Color _currentStatusColor(double probability) {
-    if (probability >= 0.85) {
+  Color _currentStatusColor() {
+    final p = _lastDetectionProbability;
+    if (p >= 0.85) {
       return Colors.red[700]!;
-    } else if (probability >= 0.7) {
+    } else if (p >= 0.7) {
       return Colors.red[400]!;
-    } else if (probability >= 0.5) {
+    } else if (p >= 0.5) {
       return Colors.orange;
-    } else if (probability >= 0.3) {
+    } else if (p >= 0.3) {
       return Colors.green[600]!;
     } else {
       return Colors.green[800]!;
     }
   }
-  
-  String _getStatusText(double p, String type) {
-    if (p >= 0.85) {
-      return '🚨 위험: $type 확신! (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.7) {
-      return '⚠️ 경고: $type 의심 (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.5) {
-      return '🤔 주의: $type 가능성 (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.3) {
-      return '✅ 안전: Real 가능성 높음 (${(p * 100).toStringAsFixed(1)}%)';
-    } else {
-      return '✨ 안전: Real 확신 (${(p * 100).toStringAsFixed(1)}%)';
-    }
-  }
 
-  Widget _buildVideoDetectionStatus() {
-    if (!_isVideoDetectionOn || _remoteUid == null) {
+  Widget _buildDetectionStatus() {
+    if (!_isDetectionOn || _remoteUid == null) {
       return const SizedBox.shrink();
     }
 
@@ -260,7 +226,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
-              '영상 AI 탐지 중...',
+              'AI 탐지 중...',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -271,9 +237,29 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       );
     }
 
-    final p = _lastVideoFakeProbability;
+    final p = _lastDetectionProbability;
     if (p == 0.0 && _joined) {
       return const SizedBox.shrink();
+    }
+
+    String statusText;
+    final statusColor = _currentStatusColor();
+
+    if (p >= 0.85) {
+      statusText =
+      '🚨 위험: 딥페이크 확신! (${(p * 100).toStringAsFixed(1)}%)';
+    } else if (p >= 0.7) {
+      statusText =
+      '⚠️ 경고: 딥페이크 의심 (${(p * 100).toStringAsFixed(1)}%)';
+    } else if (p >= 0.5) {
+      statusText =
+      '🤔 주의: 딥페이크 가능성 (${(p * 100).toStringAsFixed(1)}%)';
+    } else if (p >= 0.3) {
+      statusText =
+      '✅ 안전: Real 가능성 높음 (${(p * 100).toStringAsFixed(1)}%)';
+    } else {
+      statusText =
+      '✨ 안전: Real 확신 (${(p * 100).toStringAsFixed(1)}%)';
     }
 
     return Positioned(
@@ -285,11 +271,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           padding: const EdgeInsets.symmetric(
               horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: _currentStatusColor(p).withOpacity(0.8),
+            color: statusColor.withOpacity(0.8),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            _getStatusText(p, '딥페이크'),
+            statusText,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.bold,
@@ -299,52 +285,17 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       ),
     );
   }
-
-  Widget _buildVoiceDetectionStatus() {
-    if (!_isVoiceDetectionOn || _remoteUid == null) {
-      return const SizedBox.shrink();
-    }
-
-    final p = _lastVoiceFakeProbability;
-    if (p == 0.0 && _joined) {
-      return const SizedBox.shrink();
-    }
-
-    return Positioned(
-      top: 125, 
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: _currentStatusColor(p).withOpacity(0.8),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            _getStatusText(p, '딥보이스'),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
 
   Widget _buildFaceBoxesOverlay() {
-    if (!_isVideoDetectionOn ||
+    if (!_isDetectionOn ||
         _remoteUid == null ||
         _snapshotImageSize == null ||
         _faceRect == null ||
-        _lastVideoFakeProbability == 0.0) {
+        _lastDetectionProbability == 0.0) {
       return const SizedBox.shrink();
     }
 
-    final boxColor = _currentStatusColor(_lastVideoFakeProbability);
+    final boxColor = _currentStatusColor();
     final rect = _faceRect!;
 
     return Positioned.fill(
@@ -400,12 +351,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _agoraService.switchCamera();
   }
 
-  void _onToggleVideoDetection() {
+  void _onToggleDetection() {
     if (!mounted) return;
     setState(() {
-      _isVideoDetectionOn = !_isVideoDetectionOn;
-      if (!_isVideoDetectionOn) {
-        _lastVideoFakeProbability = 0.0;
+      _isDetectionOn = !_isDetectionOn;
+      if (!_isDetectionOn) {
+        _lastDetectionProbability = 0.0;
         _faceRect = null;
         _snapshotImageSize = null;
         _stopDetectionLoop();
@@ -415,36 +366,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     });
   }
 
-  Future<void> _onToggleVoiceDetection() async {
-    if (!mounted) return;
-
-    final newStatus = !_isVoiceDetectionOn;
-    if (newStatus) {
-      var status = await Permission.microphone.request();
-      if (status.isGranted) {
-        _voiceDetectService.startDetection();
-        setState(() => _isVoiceDetectionOn = true);
-      } else {
-         print("마이크 권한이 거부되었습니다.");
-      }
-    } else {
-      _voiceDetectService.stopDetection();
-      setState(() {
-         _isVoiceDetectionOn = false;
-         _lastVoiceFakeProbability = 0.0;
-      });
-    }
-  }
-
-
   @override
   void dispose() {
     _callTimer?.cancel();
     _stopDetectionLoop();
-    _voiceFakeProbSub?.cancel();
     _agoraService.dispose();
     _detectionService.dispose();
-    _voiceDetectService.dispose();
     super.dispose();
   }
 
@@ -484,7 +411,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           icon: Icons.call_end,
           label: '취소',
           color: Colors.red,
-          onTap: _leaveChannel, 
+          onTap: _leaveChannel,
         ),
       ],
     );
@@ -505,22 +432,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           onTap: _onToggleMute,
         ),
         _buildControlButton(
-          icon: _isVideoDetectionOn ? Icons.shield : Icons.shield_outlined,
-          label: '영상탐지',
-          color: _isVideoDetectionOn ? Colors.teal : Colors.grey[700],
-          onTap: _onToggleVideoDetection,
+          icon: _isDetectionOn ? Icons.shield : Icons.shield_outlined,
+          label: _isDetectionOn ? '탐지 ON' : '탐지 OFF',
+          color: _isDetectionOn ? Colors.teal : Colors.redAccent,
+          onTap: _onToggleDetection,
         ),
         _buildControlButton(
-          icon: _isVoiceDetectionOn ? Icons.multitrack_audio : Icons.multitrack_audio_outlined,
-          label: '음성탐지',
-          color: _isVoiceDetectionOn ? Colors.blueAccent : Colors.grey[700],
-          onTap: _onToggleVoiceDetection,
+          icon: Icons.cameraswitch,
+          label: '카메라 전환',
+          onTap: _onSwitchCamera,
         ),
         _buildControlButton(
           icon: Icons.call_end,
           label: '종료',
           color: Colors.red,
-          onTap: _leaveChannel, 
+          onTap: _leaveChannel,
         ),
       ],
     );
@@ -553,50 +479,58 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             style: TextStyle(color: Colors.white),
           )
               : AgoraVideoView(
-            controller: VideoViewController.remote(
-              rtcEngine: _agoraService.engine!,
-              canvas: VideoCanvas(uid: _remoteUid),
-              connection: RtcConnection(
-                channelId: widget.phoneNumber,
-              ),
-            ),
-          ),
+                  controller: VideoViewController.remote(
+                    rtcEngine: _agoraService.engine!,
+                    canvas: VideoCanvas(uid: _remoteUid!),
+                    connection: RtcConnection(channelId: widget.phoneNumber),
+                  ),
+                ),
         ),
+        // ✅ 작은 로컬 뷰를 GestureDetector로 감싸 드래그 가능하게 만듭니다.
         Positioned(
-          top: 40,
-          right: 20,
-          width: 120,
-          height: 160,
-          child: _isVideoOn
-              ? Stack(
-                  children: [
-                    AgoraVideoView(
-                      controller: VideoViewController(
-                        rtcEngine: _agoraService.engine!,
-                        canvas: const VideoCanvas(uid: 0),
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: InkWell(
-                        onTap: _onSwitchCamera,
-                        child: CircleAvatar(
-                          radius: 12,
-                          backgroundColor: Colors.black.withOpacity(0.5),
-                          child: const Icon(Icons.cameraswitch, color: Colors.white, size: 14),
+          left: _localViewPosition.dx,
+          top: _localViewPosition.dy,
+          child: GestureDetector(
+            onPanUpdate: (details) {
+              setState(() {
+                _localViewPosition += details.delta;
+              });
+            },
+            child: SizedBox(
+              width: 120,
+              height: 160,
+              child: _isVideoOn
+                  ? Stack(
+                      children: [
+                        AgoraVideoView(
+                          controller: VideoViewController(
+                            rtcEngine: _agoraService.engine!,
+                            canvas: const VideoCanvas(uid: 0),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                )
-              : Container(
-            color: Colors.grey[900],
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.videocam_off,
-              color: Colors.white,
-              size: 30,
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: InkWell(
+                            onTap: _onSwitchCamera,
+                            child: CircleAvatar(
+                              radius: 12,
+                              backgroundColor: Colors.black.withOpacity(0.5),
+                              child: const Icon(Icons.cameraswitch, color: Colors.white, size: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Container(
+                color: Colors.grey[900],
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.videocam_off,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
             ),
           ),
         ),
@@ -622,8 +556,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ),
           ),
         ),
-        _buildVideoDetectionStatus(),
-        _buildVoiceDetectionStatus(),
+        _buildDetectionStatus(),
         _buildFaceBoxesOverlay(),
       ],
     );
@@ -642,7 +575,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           onTap: onTap,
           borderRadius: BorderRadius.circular(30),
           child: CircleAvatar(
-            radius: 26, 
+            radius: 26,
             backgroundColor: color ?? Colors.grey[800],
             child: Icon(icon, color: Colors.white, size: 28),
           ),
@@ -652,7 +585,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           label,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 12, 
+            fontSize: 12,
           ),
         ),
       ],

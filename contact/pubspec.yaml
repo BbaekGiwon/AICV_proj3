@@ -15,13 +15,13 @@ dependencies:
   permission_handler: ^11.0.1
   cupertino_icons: ^1.0.8
 
+  # ✅ 원래 사용하던 tflite_v2 패키지로 복원
   tflite_v2: ^1.0.0
+  # tflite_flutter: ^0.10.4
+
   path_provider: ^2.0.15 
   google_mlkit_face_detection: ^0.13.1
   image: ^4.5.4
-  
-  # ✅ Firebase를 사용하지 않으므로 제거
-  # firebase_core: ^5.0.0
 
 dev_dependencies:
   flutter_test:
