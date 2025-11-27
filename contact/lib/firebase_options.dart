@@ -50,22 +50,19 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyB9F8xp0g2duVlMflBa0Bq_5SHRDpKrh4I',
-    appId: '1:67375900904:android:e60830c16003f46b72815d',
-    messagingSenderId: '67375900904',
-    projectId: 'deepfakekiller',
-    databaseURL: 'https://deepfakekiller-default-rtdb.firebaseio.com',
-    storageBucket: 'deepfakekiller.firebasestorage.app',
+    apiKey: 'AIzaSyCqivgkroDNaA6FsgntPMBbqgpkohG3g84',
+    appId: '1:114887947210:android:ef959d55d656665adbd533',
+    messagingSenderId: '114887947210',
+    projectId: 'deepfakekiller-672cf',
+    storageBucket: 'deepfakekiller-672cf.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBAGn4eWYfn1rAWK7ipy2oPjNre31voGUI',
-    appId: '1:67375900904:ios:b3cb4b7849e5a22172815d',
-    messagingSenderId: '67375900904',
-    projectId: 'deepfakekiller',
-    databaseURL: 'https://deepfakekiller-default-rtdb.firebaseio.com',
-    storageBucket: 'deepfakekiller.firebasestorage.app',
+    apiKey: 'AIzaSyB-a67ihyFvYHclVG0M4mvM_vT7x3l6fUA',
+    appId: '1:114887947210:ios:01e62cfbe3243f01dbd533',
+    messagingSenderId: '114887947210',
+    projectId: 'deepfakekiller-672cf',
+    storageBucket: 'deepfakekiller-672cf.firebasestorage.app',
     iosBundleId: 'com.example.contact',
   );
-
 }

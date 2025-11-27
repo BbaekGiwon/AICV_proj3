@@ -3,13 +3,17 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../models/call_record.dart';
+import '../repositories/call_repository.dart';
 import '../services/agora_service.dart';
 import '../services/detection_service.dart';
+import '../services/firestore_service.dart';
 import '../services/permission_service.dart';
+import '../services/storage_service.dart';
 import '../utils/timer_formatter.dart';
 
 class VideoCallScreen extends StatefulWidget {
@@ -24,6 +28,11 @@ class VideoCallScreen extends StatefulWidget {
 class _VideoCallScreenState extends State<VideoCallScreen> {
   final AgoraService _agoraService = AgoraService();
   final DetectionService _detectionService = DetectionService();
+  final FirestoreService _firestoreService = FirestoreService();
+  final StorageService _storageService = StorageService();
+  late final CallRecordRepository _callRecordRepository;
+
+  CallRecord? _currentCall;
 
   bool _joined = false;
   int? _remoteUid;
@@ -36,15 +45,16 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   Timer? _callTimer;
   Timer? _detectionTimer;
   Duration _duration = Duration.zero;
-  late DateTime _callStartTime;
   bool _timerStarted = false;
 
   bool _isProcessing = false;
   bool _hasEnded = false;
 
-  double _lastDetectionProbability = 0.0;
+  // AI 탐지 관련 변수들
   int _deepfakeDetections = 0;
-
+  double _maxFakeProbability = 0.0; // 통화 전체의 최고 위험도
+  String? _highestProbFilePath; // ✅ 가장 높은 확률일 때의 스냅샷 파일 경로
+  double _lastDetectionProbability = 0.0; // ✅ 실시간 위험도 표시를 위한 마지막 탐지 결과
   Rect? _faceRect;
   Size? _snapshotImageSize;
 
@@ -54,6 +64,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void initState() {
     super.initState();
     _myUid = Random().nextInt(999999999);
+    _callRecordRepository =
+        CallRecordRepository(_firestoreService, _storageService);
     _initServices();
   }
 
@@ -76,10 +88,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
         if (!_timerStarted) {
           _timerStarted = true;
-          _startCallTimer();
-          _lastDetectionProbability = 0.0;
-          _faceRect = null;
-          _snapshotImageSize = null;
+          _startCall();
         }
 
         if (_isDetectionOn) {
@@ -100,12 +109,22 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
-  void _startCallTimer() {
-    _callStartTime = DateTime.now();
+  void _startCall() {
+    final callStartTime = DateTime.now();
+    _currentCall = CallRecord(
+      id: const Uuid().v4(),
+      channelId: widget.phoneNumber,
+      callStartedAt: callStartTime,
+    );
+
+    final currentHistory = callHistoryNotifier.value;
+    callHistoryNotifier.value = [_currentCall!, ...currentHistory];
+
     _callTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
+      final newDuration = DateTime.now().difference(callStartTime);
       setState(() {
-        _duration = DateTime.now().difference(_callStartTime);
+        _duration = newDuration;
       });
     });
   }
@@ -138,22 +157,25 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           result.imageWidth == 0 ||
           result.imageHeight == 0) {
         setState(() {
-          _lastDetectionProbability = 0.0;
           _faceRect = null;
           _snapshotImageSize = null;
+          _lastDetectionProbability = 0.0;
         });
       } else {
         final fakeProb = result.fakeProb;
         setState(() {
           _lastDetectionProbability = fakeProb;
-          _faceRect = result.faceRect;
-          _snapshotImageSize =
-              Size(result.imageWidth.toDouble(), result.imageHeight.toDouble());
+          if (fakeProb > _maxFakeProbability) {
+            _maxFakeProbability = fakeProb;
+            _highestProbFilePath = filePath; // ✅ 최고 확률일 때 파일 경로 저장
+          }
           if (fakeProb >= 0.7) {
             _deepfakeDetections++;
           }
+          _faceRect = result.faceRect;
+          _snapshotImageSize =
+              Size(result.imageWidth.toDouble(), result.imageHeight.toDouble());
         });
-
         print('✅ 영상 Fake 확률: ${(fakeProb * 100).toStringAsFixed(2)}%');
       }
     } catch (e) {
@@ -167,29 +189,59 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     if (_hasEnded) return;
     _hasEnded = true;
 
+    if (mounted) {
+      Navigator.pop(context);
+    }
+
     _callTimer?.cancel();
     _stopDetectionLoop();
 
-    if (_remoteUid != null) {
-      callHistory.add(
-        CallRecord(
-          phoneNumber: widget.phoneNumber,
-          startTime: _callStartTime,
-          duration: _duration,
-          deepfakeDetections: _deepfakeDetections,
-          highestProbability: _lastDetectionProbability,
-        ),
+    if (_currentCall != null) {
+      String? highestProbKeyFrameUrl;
+      // ✅ 최고 확률 이미지가 있다면 업로드하고 URL을 받아옵니다.
+      if (_highestProbFilePath != null) {
+        try {
+          highestProbKeyFrameUrl = await _storageService.uploadSingleKeyFrame(
+            recordId: _currentCall!.id,
+            filePath: _highestProbFilePath!,
+          );
+        } catch (e) {
+          print('🚨 [DEBUG] 최고 확률 이미지 업로드 실패: $e');
+          // 업로드에 실패하더라도 나머지 기록은 저장되도록 URL을 null로 둡니다.
+        }
+      }
+
+      final finalRecord = _currentCall!.copyWith(
+        callEndedAt: DateTime.now(),
+        durationInSeconds: _duration.inSeconds,
+        deepfakeDetections: _deepfakeDetections,
+        maxFakeProbability: _maxFakeProbability,
+        status: CallStatus.done,
+        // ✅ 저장된 URL을 모델에 반영
+        highestProbKeyFrameUrl: highestProbKeyFrameUrl,
+        // TODO: Grad-CAM URL도 같은 방식으로 처리해야 합니다.
       );
+
+      final currentHistory = callHistoryNotifier.value;
+      final index = currentHistory.indexWhere((c) => c.id == finalRecord.id);
+      if (index != -1) {
+        currentHistory[index] = finalRecord;
+        callHistoryNotifier.value = List.from(currentHistory);
+      }
+
+      try {
+        await _callRecordRepository.createOrUpdateCallRecord(finalRecord);
+        print('✅ [DEBUG] 최종 통화 기록 원격 저장 완료.');
+      } catch (e) {
+        print('🚨 [DEBUG] 최종 통화 기록 원격 저장 실패: $e');
+      }
     }
 
     await _agoraService.dispose();
     await _detectionService.dispose();
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
   }
 
+  // ✅ 실시간 색상 결정을 위해 마지막 탐지 확률을 사용합니다.
   Color _currentStatusColor() {
     final p = _lastDetectionProbability;
     if (p >= 0.85) {
@@ -211,14 +263,14 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     }
 
     if (_isProcessing) {
-      return Positioned(
+       return Positioned(
         top: 90,
         left: 0,
         right: 0,
         child: Center(
           child: Container(
             padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.blue.withOpacity(0.8),
               borderRadius: BorderRadius.circular(20),
@@ -235,6 +287,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       );
     }
 
+    // ✅ 실시간 상태 표기를 위해 마지막 탐지 확률을 사용합니다.
     final p = _lastDetectionProbability;
     if (p == 0.0 && _joined) {
       return const SizedBox.shrink();
@@ -244,20 +297,15 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     final statusColor = _currentStatusColor();
 
     if (p >= 0.85) {
-      statusText =
-      '🚨 위험: 딥페이크 확신! (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '🚨 위험: 딥페이크 확신! (${(p * 100).toStringAsFixed(1)}%)';
     } else if (p >= 0.7) {
-      statusText =
-      '⚠️ 경고: 딥페이크 의심 (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '⚠️ 경고: 딥페이크 의심 (${(p * 100).toStringAsFixed(1)}%)';
     } else if (p >= 0.5) {
-      statusText =
-      '🤔 주의: 딥페이크 가능성 (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '🤔 주의: 딥페이크 가능성 (${(p * 100).toStringAsFixed(1)}%)';
     } else if (p >= 0.3) {
-      statusText =
-      '✅ 안전: Real 가능성 높음 (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '✅ 안전: Real 가능성 높음 (${(p * 100).toStringAsFixed(1)}%)';
     } else {
-      statusText =
-      '✨ 안전: Real 확신 (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '✨ 안전: Real 확신 (${(p * 100).toStringAsFixed(1)}%)';
     }
 
     return Positioned(
@@ -266,8 +314,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       right: 0,
       child: Center(
         child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: statusColor.withOpacity(0.8),
             borderRadius: BorderRadius.circular(20),
@@ -284,6 +331,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
+  // ✅ 실수로 막아두었던 사각형 오버레이 기능을 복원합니다.
   Widget _buildFaceBoxesOverlay() {
     if (!_isDetectionOn ||
         _remoteUid == null ||
@@ -354,7 +402,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     setState(() {
       _isDetectionOn = !_isDetectionOn;
       if (!_isDetectionOn) {
-        _lastDetectionProbability = 0.0;
+        _maxFakeProbability = 0.0;
         _faceRect = null;
         _snapshotImageSize = null;
         _stopDetectionLoop();
@@ -450,7 +498,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     );
   }
 
-
   Widget _buildBody() {
     if (!_joined) {
       return const Center(
@@ -473,9 +520,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         Center(
           child: _remoteUid == null
               ? const Text(
-            "상대방 접속 대기 중...",
-            style: TextStyle(color: Colors.white),
-          )
+                  "상대방 접속 대기 중...",
+                  style: TextStyle(color: Colors.white),
+                )
               : AgoraVideoView(
                   controller: VideoViewController.remote(
                     rtcEngine: _agoraService.engine!,
@@ -497,22 +544,21 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
               width: 120,
               height: 160,
               child: _isVideoOn
-                  // ✅ Stack을 제거하고 AgoraVideoView만 남깁니다.
                   ? AgoraVideoView(
                       controller: VideoViewController(
                         rtcEngine: _agoraService.engine!,
-                        canvas: const VideoCanvas(uid: 0),
+                        canvas: const VideoCanvas(uid: 0), // ✅ 오타 수정: Canvas -> VideoCanvas
                       ),
                     )
                   : Container(
-                color: Colors.grey[900],
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.videocam_off,
-                  color: Colors.white,
-                  size: 30,
-                ),
-              ),
+                      color: Colors.grey[900],
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.videocam_off,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                    ),
             ),
           ),
         ),
@@ -522,8 +568,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
           right: 0,
           child: Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.5),
                 borderRadius: BorderRadius.circular(10),

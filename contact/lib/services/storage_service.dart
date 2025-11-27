@@ -22,6 +22,23 @@ class StorageService {
     return urls;
   }
 
+  /// ✅ 단일 키 프레임 업로드 (최고 확률 스냅샷용)
+  Future<String> uploadSingleKeyFrame({
+    required String recordId,
+    required String filePath,
+  }) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception("File not found at: $filePath");
+    }
+    
+    final fileName = "highest_prob_keyframe.jpg";
+    final ref = _storage.ref().child("call_records/$recordId/$fileName");
+
+    await ref.putFile(file);
+    return await ref.getDownloadURL();
+  }
+
   /// key frames 업로드
   Future<List<String>> uploadKeyFrames({
     required String recordId,

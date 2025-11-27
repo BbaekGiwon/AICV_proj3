@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'screens/splash_screen.dart';
 
-// ✅ Firebase를 사용하지 않으므로 main 함수를 동기식으로 변경
-void main() {
-  // ✅ Firebase 관련 코드 모두 제거
+// ✅ Firebase 초기화를 위해 main 함수를 비동기식으로 변경
+Future<void> main() async {
+  // ✅ Flutter 엔진과 위젯 바인딩 초기화
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ Firebase 앱 초기화
+  await Firebase.initializeApp();
+
   runApp(const MyApp());
 }
 

@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
 import '../services/firestore_service.dart';
@@ -12,7 +15,7 @@ class ReportRepository {
 
   /// 서버에 보고서 생성 요청 → 분석 파이프라인 실행
   Future<Map<String, dynamic>> requestReportGeneration({
-    required String serverUrl,        // ex: "https://api.myserver.com/generateReport"
+    required String serverUrl, // ex: "https://api.myserver.com/generateReport"
     required String recordId,
   }) async {
     final response = await http.post(
@@ -25,22 +28,8 @@ class ReportRepository {
       throw Exception("보고서 생성 요청 실패: ${response.body}");
     }
 
-    /// response body 예시:
-    /// {
-    ///   "key_frames": ["http://.../key1.jpg", ...],
-    ///   "gradcam": ["http://.../grad1.jpg", ...],
-    ///   "report_pdf": "http://.../report.pdf",
-    ///   "max_prob": 0.92,
-    ///   "risk_level": "high"
-    /// }
-
-    return {
-      "key_frames": [],  // 서버 응답 파싱 (지금은 mock 구조)
-      "gradcam": [],
-      "report_pdf": "",
-      "max_prob": 0.0,
-      "risk_level": "",
-    };
+    // ✅ 서버의 실제 응답을 JSON으로 파싱하여 반환하도록 수정합니다.
+    return json.decode(response.body) as Map<String, dynamic>;
   }
 
   /// URL → 실제 파일 다운로드
@@ -65,10 +54,7 @@ class ReportRepository {
     required double maxProb,
     required String riskLevel,
   }) async {
-
-    // ---------------------------
-    // 1) Key frames 다운로드 후 업로드
-    // ---------------------------
+    // --------------------------- (이하 다운로드 및 업로드 로직은 동일) ---------------------------
     List<File> keyFrameFiles = [];
     for (int i = 0; i < keyFrameUrlsFromServer.length; i++) {
       final f = await _downloadFile(
@@ -77,19 +63,8 @@ class ReportRepository {
       );
       keyFrameFiles.add(f);
     }
+    final keyFrameUrls = await _storage.uploadKeyFrames(recordId: recordId, files: keyFrameFiles);
 
-    final keyFrameUrls =
-    await _storage.uploadKeyFrames(recordId: recordId, files: keyFrameFiles);
-
-    // Firestore 반영
-    await _firestore.addUrls(
-      recordId: recordId,
-      keyFrames: keyFrameUrls,
-    );
-
-    // ---------------------------
-    // 2) GradCAM 이미지 다운로드 → Storage 업로드
-    // ---------------------------
     List<File> gradcamFiles = [];
     for (int i = 0; i < gradcamUrlsFromServer.length; i++) {
       final f = await _downloadFile(
@@ -98,38 +73,28 @@ class ReportRepository {
       );
       gradcamFiles.add(f);
     }
+    final gradcamUrls = await _storage.uploadGradcamImages(recordId: recordId, files: gradcamFiles);
 
-    final gradcamUrls =
-    await _storage.uploadGradcamImages(recordId: recordId, files: gradcamFiles);
-
-    await _firestore.addUrls(
-      recordId: recordId,
-      gradcamImages: gradcamUrls,
-    );
-
-    // ---------------------------
-    // 3) Report PDF 다운로드 → Storage 업로드
-    // ---------------------------
-    final pdfFile =
-    await _downloadFile(reportPdfUrlFromServer, "report.pdf");
-
+    final pdfFile = await _downloadFile(reportPdfUrlFromServer, "report.pdf");
     final pdfUrl = await _storage.uploadReportPdf(
       recordId: recordId,
       file: pdfFile,
     );
 
-    await _firestore.updateReportUrl(
-      recordId: recordId,
-      pdfUrl: pdfUrl,
-    );
+    // ------------------- ✅ 여러번 호출하던 로직을 하나로 통합 -------------------
 
-    // ---------------------------
-    // 4) 위험도 정보 업데이트
-    // ---------------------------
-    await _firestore.updateRiskInfo(
-      recordId: recordId,
-      maxProb: maxProb,
-      riskLevel: riskLevel,
-    );
+    // 1. 업데이트할 모든 데이터를 하나의 Map으로 구성합니다.
+    final finalReportData = {
+      // FieldValue.arrayUnion을 사용하여 기존 배열에 새로운 URL들을 추가합니다.
+      'key_frames': FieldValue.arrayUnion(keyFrameUrls),
+      'gradcam_images': FieldValue.arrayUnion(gradcamUrls),
+      'report_pdf_url': pdfUrl,
+      'max_fake_prob': maxProb,
+      'risk_level': riskLevel,
+      'status': 'done', // 최종적으로 상태를 'done'으로 변경
+    };
+
+    // 2. 하나의 통일된 함수를 호출하여 데이터를 한 번에 업데이트합니다.
+    await _firestore.updateCallRecord(recordId, finalReportData);
   }
 }
