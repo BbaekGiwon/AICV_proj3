@@ -1,7 +1,28 @@
 import 'package:flutter/material.dart';
 import '../models/call_record.dart';
 
-// ✅ 상세 보고서 화면을 위한 새로운 StatelessWidget을 추가합니다.
+// ✨ 확률에 따라 UI 스타일(색상, 아이콘, 텍스트)을 결정하는 헬퍼 클래스
+class _DetectionStatus {
+  final Color color;
+  final IconData icon;
+  final String text;
+
+  _DetectionStatus(this.color, this.icon, this.text);
+
+  factory _DetectionStatus.fromProbability(double p) {
+    if (p >= 0.85) {
+      return _DetectionStatus(Colors.red[700]!, Icons.gpp_bad, '위험');
+    } else if (p >= 0.7) {
+      return _DetectionStatus(Colors.red[400]!, Icons.warning_amber, '경고');
+    } else if (p >= 0.5) {
+      return _DetectionStatus(Colors.orange, Icons.error_outline, '주의');
+    } else {
+      // 50% 미만은 원칙적으로 저장되지 않지만, 안전장치로 추가
+      return _DetectionStatus(Colors.grey, Icons.help_outline, '알 수 없음');
+    }
+  }
+}
+
 class ReportDetailScreen extends StatelessWidget {
   final CallRecord record;
 
@@ -19,68 +40,50 @@ class ReportDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- 1. 기본 통화 정보 섹션 ---
             _buildSectionTitle('통화 개요'),
             _buildInfoCard(
               children: [
                 _buildInfoRow('채널 ID', record.channelId),
-                _buildInfoRow('통화 시작', record.callStartedAt.toLocal().toString().substring(0, 16)),
-                _buildInfoRow('통화 종료', record.callEndedAt?.toLocal().toString().substring(0, 16) ?? 'N/A'),
+                _buildInfoRow('통화 시작',
+                    record.callStartedAt.toLocal().toString().substring(0, 16)),
+                _buildInfoRow('통화 종료',
+                    record.callEndedAt?.toLocal().toString().substring(0, 16) ??
+                        'N/A'),
                 _buildInfoRow('총 통화시간', '${record.durationInSeconds}초'),
               ],
             ),
             const SizedBox(height: 24),
-
-            // --- 2. AI 분석 결과 섹션 ---
             _buildSectionTitle('AI 분석 결과'),
             _buildInfoCard(
               highlight: true,
               children: [
-                _buildInfoRow('위험도', record.riskLevel.toString().split('.').last.toUpperCase(),
+                _buildInfoRow(
+                    '위험도',
+                    record.riskLevel.toString().split('.').last.toUpperCase(),
                     valueColor: _getRiskColor(record.riskLevel)),
                 _buildInfoRow('딥페이크 탐지', '${record.deepfakeDetections}회'),
-                _buildInfoRow(
-                    '최대 의심 확률', '${(record.maxFakeProbability * 100).toStringAsFixed(1)}%'),
+                _buildInfoRow('최대 의심 확률',
+                    '${(record.maxFakeProbability * 100).toStringAsFixed(1)}%'),
               ],
             ),
             const SizedBox(height: 24),
-
-            // --- 3. 상세 분석 자료 섹션 ---
             _buildSectionTitle('상세 분석 자료'),
             const SizedBox(height: 8),
 
-            // ✅ 가장 높게 탐지된 순간을 보여주는 새로운 섹션
-            if (record.highestProbKeyFrameUrl != null && record.highestProbGradCamUrl != null) ...[
-              _buildHighlightImageSection(
-                context,
-                '가장 높게 탐지된 순간',
-                record.highestProbKeyFrameUrl!,
-                record.highestProbGradCamUrl!,
-              ),
-              const SizedBox(height: 24),
-            ],
+            // ✅ 위험도 기준 안내 위젯 추가
+            _buildRiskLegend(),
+            const SizedBox(height: 24),
 
-            // 키 프레임 이미지 목록
             if (record.keyFrames.isNotEmpty) ...[
-              _buildImageGrid('전체 주요 프레임', record.keyFrames),
+              _buildKeyFrameGrid('주요 의심 프레임 (최대 4개)', record.keyFrames),
               const SizedBox(height: 16),
             ],
-
-            // Grad-CAM 이미지 목록
-            if (record.gradcamImages.isNotEmpty) ...[
-              _buildImageGrid('전체 AI 판단 근거 (Grad-CAM)', record.gradcamImages),
-              const SizedBox(height: 16),
-            ],
-
-            // PDF 보고서 다운로드 버튼
             if (record.reportPdfUrl != null)
               Center(
                 child: ElevatedButton.icon(
                   icon: const Icon(Icons.picture_as_pdf),
                   label: const Text('종합 보고서 다운로드'),
-                  onPressed: () {
-                    // TODO: PDF 파일 열기/다운로드 로직 구현
-                  },
+                  onPressed: () {},
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 12),
@@ -93,7 +96,6 @@ class ReportDetailScreen extends StatelessWidget {
     );
   }
 
-  // 섹션 제목을 꾸미는 위젯
   Widget _buildSectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
@@ -104,7 +106,6 @@ class ReportDetailScreen extends StatelessWidget {
     );
   }
 
-  // 정보 카드 UI
   Widget _buildInfoCard(
       {required List<Widget> children, bool highlight = false}) {
     return Card(
@@ -118,7 +119,6 @@ class ReportDetailScreen extends StatelessWidget {
     );
   }
 
-  // "항목: 값" 형태의 정보 행
   Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -136,87 +136,132 @@ class ReportDetailScreen extends StatelessWidget {
       ),
     );
   }
-  
-  // ✅ 가장 의심스러운 순간을 보여주기 위한 위젯
-  Widget _buildHighlightImageSection(BuildContext context, String title, String keyFrameUrl, String gradCamUrl) {
-    Widget imageWidget(String url) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, progress) =>
-              progress == null ? child : const Center(child: CircularProgressIndicator()),
-          errorBuilder: (context, error, stackTrace) => const Icon(Icons.error, size: 40),
-        ),
-      );
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  // ✅ 새로 추가된 위험도 기준 안내 위젯
+  Widget _buildRiskLegend() {
+    return _buildInfoCard(
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+        const Text(
+          '위험도 기준 안내',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
-        Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      const Text("원본 프레임", style: TextStyle(fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 8),
-                      imageWidget(keyFrameUrl),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    children: [
-                      const Text("AI 판단 근거", style: TextStyle(fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 8),
-                      imageWidget(gradCamUrl),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        )
+        _buildLegendRow(_DetectionStatus.fromProbability(0.85)),
+        const SizedBox(height: 8),
+        _buildLegendRow(_DetectionStatus.fromProbability(0.7)),
+        const SizedBox(height: 8),
+        _buildLegendRow(_DetectionStatus.fromProbability(0.5)),
       ],
     );
   }
 
-  // 이미지 그리드 UI
-  Widget _buildImageGrid(String title, List<String> imageUrls) {
+  // ✅ 위험도 기준의 한 줄을 만드는 헬퍼 위젯
+  Widget _buildLegendRow(_DetectionStatus status) {
+    String description;
+    if (status.text == '위험') {
+      description = '확률 85% 이상';
+    } else if (status.text == '경고') {
+      description = '확률 70% 이상';
+    } else {
+      description = '확률 50% 이상';
+    }
+
+    return Row(
+      children: [
+        Icon(status.icon, color: status.color, size: 22),
+        const SizedBox(width: 12),
+        Text(
+          status.text,
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: status.color, fontSize: 15),
+        ),
+        const Spacer(),
+        Text(
+          description,
+          textAlign: TextAlign.right,
+          style: TextStyle(color: Colors.grey[700], fontSize: 14),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKeyFrameGrid(String title, List<KeyFrame> keyFrames) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
+        Text(title,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+        const SizedBox(height: 12),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 0.8, // 이미지와 텍스트 공간 확보를 위해 비율 조정
           ),
-          itemCount: imageUrls.length,
+          itemCount: keyFrames.length,
           itemBuilder: (context, index) {
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrls[index],
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : const Center(child: CircularProgressIndicator()),
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.error),
+            final keyFrame = keyFrames[index];
+            final status = _DetectionStatus.fromProbability(keyFrame.probability);
+
+            return Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: status.color, width: 3),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      keyFrame.url,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null
+                              ? child
+                              : const Center(child: CircularProgressIndicator()),
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.error),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 6),
+                        color: Colors.black.withOpacity(0.6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(status.icon, color: status.color, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              status.text,
+                              style: TextStyle(
+                                color: status.color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${(keyFrame.probability * 100).toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -225,7 +270,6 @@ class ReportDetailScreen extends StatelessWidget {
     );
   }
 
-  // 위험도에 따른 색상 반환
   Color _getRiskColor(RiskLevel riskLevel) {
     switch (riskLevel) {
       case RiskLevel.danger:
@@ -235,7 +279,6 @@ class ReportDetailScreen extends StatelessWidget {
       case RiskLevel.caution:
         return Colors.amber;
       default:
-        // ✅ 'unknown'을 포함한 나머지 경우는 초록색으로 표시
         return Colors.green;
     }
   }

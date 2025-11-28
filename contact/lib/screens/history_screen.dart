@@ -31,14 +31,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
     });
   }
 
-  // ✅ 상세 화면으로 이동하는 함수
   void _navigateToDetail(CallRecord record) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ReportDetailScreen(record: record),
-      ),
-    );
+    // ✅ 분석이 완료된 항목만 상세 화면으로 이동
+    if (record.status == CallStatus.done) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReportDetailScreen(record: record),
+        ),
+      );
+    }
   }
 
   @override
@@ -51,35 +53,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
       itemCount: _history.length,
       itemBuilder: (context, index) {
         final record = _history[index];
+        final isProcessing = record.status == CallStatus.processing;
+
         final Color riskColor;
         final IconData riskIcon;
-        switch (record.riskLevel) {
-          case RiskLevel.danger:
-            riskColor = Colors.red;
-            riskIcon = Icons.gpp_bad;
-            break;
-          case RiskLevel.warning:
-            riskColor = Colors.orange;
-            riskIcon = Icons.shield;
-            break;
-          case RiskLevel.caution:
-            riskColor = Colors.yellow[700]!;
-            riskIcon = Icons.shield_outlined;
-            break;
-          default:
-            riskColor = Colors.green;
-            riskIcon = Icons.verified_user;
-            break;
+
+        if (isProcessing) {
+          riskColor = Colors.grey;
+          riskIcon = Icons.hourglass_empty;
+        } else {
+          switch (record.riskLevel) {
+            case RiskLevel.danger:
+              riskColor = Colors.red;
+              riskIcon = Icons.gpp_bad;
+              break;
+            case RiskLevel.warning:
+              riskColor = Colors.orange;
+              riskIcon = Icons.shield;
+              break;
+            case RiskLevel.caution:
+              riskColor = Colors.yellow[700]!;
+              riskIcon = Icons.shield_outlined;
+              break;
+            default:
+              riskColor = Colors.green;
+              riskIcon = Icons.verified_user;
+              break;
+          }
         }
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: ListTile(
-            onTap: () => _navigateToDetail(record), // ✅ 탭하면 상세 화면으로 이동
+            onTap: () => _navigateToDetail(record),
             contentPadding: const EdgeInsets.all(12),
             leading: Icon(riskIcon, color: riskColor, size: 40),
             title: Text(
-              record.channelId, // phoneNumber에서 channelId로 변경
+              record.channelId,
               style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
             ),
             subtitle: Column(
@@ -91,13 +101,22 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   style: const TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  '탐지: ${record.deepfakeDetections}회 / 위험도: ${(record.maxFakeProbability * 100).toStringAsFixed(1)}%',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
+                if (isProcessing)
+                  const Text(
+                    '분석 중입니다...',
+                    style: TextStyle(fontSize: 12, color: Colors.blueAccent),
+                  )
+                else
+                  Text(
+                    '탐지: ${record.deepfakeDetections}회 / 위험도: ${(record.maxFakeProbability * 100).toStringAsFixed(1)}%',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
               ],
             ),
-            trailing: Text('${record.durationInSeconds}초'),
+            trailing: isProcessing
+                ? const SizedBox(
+                    width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                : Text('${record.durationInSeconds}초'),
           ),
         );
       },
