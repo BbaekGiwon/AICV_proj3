@@ -23,7 +23,8 @@ dependencies:
   http: any
 
   # ✅ 원래 사용하던 tflite_v2 패키지로 복원
-  tflite_v2: ^1.0.0
+  tflite_v2:
+    path: packages/tflite_v2
   # tflite_flutter: ^0.10.4
 
   path_provider: ^2.0.15 

@@ -42,4 +42,10 @@ flutter {
     source = "../.."
 }
 
-dependencies {}
+dependencies {
+    implementation("org.tensorflow:tensorflow-lite:2.12.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.12.0")
+
+    // 🔥 Agora RTC SDK 6.1.0
+    implementation("io.agora.rtc:full-rtc:6.1.0")
+}
