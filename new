@@ -1,0 +1,4 @@
+    # (수정 2) 본인의 Firebase Storage 버킷 주소로 변경
+    # ⚠️ 사진에서 확인한 정확한 주소를 사용합니다.
+    STORAGE_BUCKET = "deepfakekiller-672cf.firebasestorage.app"
+    
