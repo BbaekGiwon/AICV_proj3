@@ -1,63 +1,50 @@
-import 'dart:io';
+import 'dart:async';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 
-typedef JoinCallback = void Function();
-typedef RemoteJoinCallback = void Function(int uid);
-typedef SnapshotCallback = void Function(String filePath);
+typedef VoidCallback = void Function();
+typedef IntCallback = void Function(int uid);
+typedef StringCallback = void Function(String filePath);
 
 class AgoraService {
-  RtcEngine? engine;
+  RtcEngine? _engine;
+  RtcEngine? get engine => _engine;
 
   Future<void> init({
-    required JoinCallback onJoinSuccess,
-    required RemoteJoinCallback onRemoteJoined,
-    required SnapshotCallback onSnapshotTaken,
+    required VoidCallback onJoinSuccess,
+    required IntCallback onRemoteJoined,
+    required VoidCallback onCallEnd,
+    required StringCallback onSnapshotTaken,
   }) async {
-    engine = createAgoraRtcEngine();
-    await engine!.initialize(const RtcEngineContext(appId: AGORA_APP_ID));
+    _engine = createAgoraRtcEngine();
+    await _engine!.initialize(const RtcEngineContext(appId: AGORA_APP_ID));
 
-    await engine!.setChannelProfile(
-      ChannelProfileType.channelProfileCommunication,
-    );
-    await engine!.setClientRole(
-      role: ClientRoleType.clientRoleBroadcaster,
-    );
-
-    engine!.registerEventHandler(
+    _engine!.registerEventHandler(
       RtcEngineEventHandler(
-        onJoinChannelSuccess: (connection, elapsed) {
-          onJoinSuccess();
-        },
-        onUserJoined: (connection, uid, elapsed) {
-          onRemoteJoined(uid);
-        },
-        onSnapshotTaken:
-            (connection, uid, filePath, width, height, errCode) {
-          if (errCode == 0 && filePath.isNotEmpty) {
+        onJoinChannelSuccess: (connection, elapsed) => onJoinSuccess(),
+        onUserJoined: (connection, uid, elapsed) => onRemoteJoined(uid),
+        onLeaveChannel: (connection, stats) => onCallEnd(),
+        onSnapshotTaken: (connection, uid, filePath, width, height, errCode) {
+          if (errCode == 0) {
             onSnapshotTaken(filePath);
+          } else {
+            print('🔥 스냅샷 촬영 실패: $errCode');
           }
         },
-        onError: (err, msg) {
-          print("⚠️ Agora Error: $err, $msg");
-        },
+        onError: (err, msg) => print("⚠️ Agora Error: $err, $msg"),
       ),
     );
 
-    // ✅ 아래 두 줄을 제거하여 초기화 순서를 변경합니다.
-    // await engine!.enableVideo();
-    // await engine!.startPreview();
+    await _engine!.enableVideo();
+    await _engine!.startPreview();
   }
 
-  Future<void> joinChannel({
-    required String channelId,
-    required int uid,
-  }) async {
-    // ✅ 채널 접속 전에 토큰과 비디오 옵션을 설정
-    await engine?.enableVideo();
-    await engine?.startPreview();
+  Future<void> joinChannel({required String channelId, required int uid}) async {
+    await _engine?.setChannelProfile(ChannelProfileType.channelProfileLiveBroadcasting);
+    await _engine?.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
     
-    await engine!.joinChannel(
+    await _engine!.joinChannel(
       token: AGORA_TOKEN,
       channelId: channelId,
       uid: uid,
@@ -66,35 +53,26 @@ class AgoraService {
   }
 
   Future<void> takeSnapshot(int uid) async {
-    if (engine == null) return;
-
-    final dir = Directory.systemTemp;
-    final path = '${dir.path}/temp_frame.jpg';
-    final file = File(path);
-    if (await file.exists()) {
-      await file.delete();
-    }
-
-    await engine!.takeSnapshot(uid: uid, filePath: path);
-  }
-
-  Future<void> muteLocalAudio(bool mute) async {
-    await engine?.muteLocalAudioStream(mute);
-  }
-
-  Future<void> muteLocalVideo(bool mute) async {
-    await engine?.muteLocalVideoStream(mute);
-  }
-
-  Future<void> switchCamera() async {
-    await engine?.switchCamera();
+    final tempPath = '/data/user/0/com.example.contact/cache/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await _engine?.takeSnapshot(uid: uid, filePath: tempPath);
   }
 
   Future<void> dispose() async {
-    try {
-      await engine?.leaveChannel();
-      await engine?.stopPreview();
-      await engine?.release();
-    } catch (_) {}
+    await _engine?.leaveChannel();
+    await _engine?.stopPreview();
+    await _engine?.release();
+    _engine = null;
+  }
+
+  Future<void> muteLocalAudio(bool mute) async {
+    await _engine?.muteLocalAudioStream(mute);
+  }
+
+  Future<void> muteLocalVideo(bool mute) async {
+    await _engine?.muteLocalVideoStream(mute);
+  }
+
+  Future<void> switchCamera() async {
+    await _engine?.switchCamera();
   }
 }

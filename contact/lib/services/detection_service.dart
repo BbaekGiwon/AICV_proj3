@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart'; // ✨ RootIsolateToken을 위해 추가
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 import 'package:tflite_v2/tflite_v2.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -14,6 +15,8 @@ class DetectionResult {
   final int imageHeight;
   final String? croppedFacePath;
 
+  bool get isFake => fakeProb >= 0.5;
+
   DetectionResult({
     required this.fakeProb,
     required this.faceRect,
@@ -23,7 +26,6 @@ class DetectionResult {
   });
 }
 
-// ✨ Isolate에 전달할 데이터 구조체에 '출입증'(RootIsolateToken) 추가
 class _IsolateParams {
   final RootIsolateToken token;
   final String filePath;
@@ -33,10 +35,8 @@ class _IsolateParams {
   _IsolateParams(this.token, this.filePath, this.boundingBox, this.tempDirPath);
 }
 
-// ✨ Isolate에서 실행될 최상위 함수 (별도 작업실)
 Future<Map<String, dynamic>?> _imageProcessingIsolate(
     _IsolateParams params) async {
-  // ✨ 이 한 줄이 핵심! 별도 작업실에서 네이티브 기능을 사용할 수 있도록 출입증을 등록합니다.
   BackgroundIsolateBinaryMessenger.ensureInitialized(params.token);
 
   try {
@@ -71,6 +71,7 @@ Future<Map<String, dynamic>?> _imageProcessingIsolate(
 
 class DetectionService {
   final FaceDetector _faceDetector;
+  String? _loadedModelPath;
 
   DetectionService()
       : _faceDetector = FaceDetector(
@@ -79,10 +80,13 @@ class DetectionService {
           ),
         );
 
+  String getModelPath() => _loadedModelPath != null ? p.basename(_loadedModelPath!) : 'N/A';
+
   Future<void> loadModel() async {
+    _loadedModelPath = "assets/best_efficientnet_v13.tflite";
     await Tflite.loadModel(
-      model: "assets/efficientnet_v02.tflite",
-      labels: "assets/efficientnet_v02_labels.txt",
+      model: _loadedModelPath!,
+      labels: "assets/best_efficientnet_v13_labels.txt",
       isAsset: true,
     );
   }
@@ -103,7 +107,6 @@ class DetectionService {
     final faces = await _faceDetector.processImage(inputImage);
 
     if (faces.isEmpty) {
-      await originalFile.delete().catchError((e) {});
       return DetectionResult(
           fakeProb: 0.0, faceRect: null, imageWidth: 0, imageHeight: 0);
     }
@@ -120,17 +123,13 @@ class DetectionService {
       }
     }
 
-    // ✨ 메인 작업실에서 미리 임시 폴더 주소와 '출입증'을 발급받습니다.
     final tempDir = await getTemporaryDirectory();
     final token = RootIsolateToken.instance!;
 
-    // ✨ 무거운 이미지 처리를 Isolate로 보내면서, 출입증과 주소도 함께 전달합니다.
     final processingResult = await compute(
         _imageProcessingIsolate,
         _IsolateParams(
             token, filePath, mainFace.boundingBox, tempDir.path));
-
-    await originalFile.delete().catchError((e) {});
 
     if (processingResult == null) {
       return DetectionResult(

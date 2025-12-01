@@ -36,7 +36,7 @@ class _DialScreenState extends State<DialScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => VideoCallScreen(phoneNumber: _dialedNumber),
+        builder: (_) => VideoCallScreen(channelId: _dialedNumber),
       ),
     );
     widget.onCallEnded();

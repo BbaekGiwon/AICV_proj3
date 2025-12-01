@@ -27,12 +27,18 @@ dependencies:
   # tflite_flutter: ^0.10.4
 
   path_provider: ^2.0.15 
+  path: ^1.9.0
   google_mlkit_face_detection: ^0.13.1
   image: ^4.5.4
 
   # ✅ Firebase 및 UUID 패키지 추가0
   firebase_core: ^3.0.0
   uuid: ^4.0.0
+
+  # ✅ 디바이스 정보 수집용 패키지
+  device_info_plus: ^10.1.0
+  package_info_plus: ^8.0.0
+  dio: ^5.4.3+1
 
 dev_dependencies:
   flutter_test:
@@ -44,8 +50,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/efficientnet_v02.tflite
-    - assets/efficientnet_v02_labels.txt
+    - assets/best_efficientnet_v13.tflite
+    - assets/best_efficientnet_v13_labels.txt
 
 flutter_native_splash:
   color: "#448AFF"

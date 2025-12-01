@@ -1,24 +1,34 @@
 import 'package:flutter/foundation.dart';
 
-// ✨ 보고서 화면에 필요한 'URL과 확률'을 한 세트로 묶는 클래스
 class KeyFrame {
   final String url;
   final double probability;
+  final String? gradCamUrl;
 
-  KeyFrame({required this.url, required this.probability});
+  KeyFrame({
+    required this.url,
+    required this.probability,
+    this.gradCamUrl,
+  });
 
-  // Firestore에 저장하기 위해 Map 형태로 변환하는 메서드
   Map<String, dynamic> toMap() {
     return {
       'url': url,
       'probability': probability,
+      'gradCamUrl': gradCamUrl,
     };
+  }
+
+  factory KeyFrame.fromMap(Map<String, dynamic> map) {
+    return KeyFrame(
+      url: map['url'] ?? '',
+      probability: (map['probability'] as num?)?.toDouble() ?? 0.0,
+      gradCamUrl: map['gradCamUrl'],
+    );
   }
 }
 
 enum CallStatus { processing, done, error }
-
-enum RiskLevel { safe, caution, warning, danger, unknown }
 
 class CallRecord {
   final String id;
@@ -26,21 +36,16 @@ class CallRecord {
   final DateTime callStartedAt;
   final DateTime? callEndedAt;
   final int durationInSeconds;
-
   final int deepfakeDetections;
   final double maxFakeProbability;
-  final RiskLevel riskLevel;
-
-  final String? highestProbImageName;
-  final String? highestProbKeyFrameUrl;
-  final String? highestProbGradCamUrl;
-
+  final double averageProbability;
   final CallStatus status;
   final String? reportPdfUrl;
-
-  // ✨ String 리스트가 아닌, KeyFrame 객체의 리스트로 변경
   final List<KeyFrame> keyFrames;
-  final List<String> gradcamImages;
+  final String? userMemo;
+  // ✅✅✅ 보고서 정보 필드 추가
+  final Map<String, String> deviceInfo;
+  final Map<String, String> serverInfo;
 
   CallRecord({
     required this.id,
@@ -50,48 +55,80 @@ class CallRecord {
     this.durationInSeconds = 0,
     this.deepfakeDetections = 0,
     this.maxFakeProbability = 0.0,
-    this.riskLevel = RiskLevel.unknown,
+    this.averageProbability = 0.0,
     this.status = CallStatus.processing,
     this.reportPdfUrl,
-    this.keyFrames = const [], // 생성자에 반영
-    this.gradcamImages = const [],
-    this.highestProbImageName,
-    this.highestProbKeyFrameUrl,
-    this.highestProbGradCamUrl,
+    this.keyFrames = const [],
+    this.userMemo,
+    // ✅✅✅ 생성자에 기본값 추가
+    this.deviceInfo = const {},
+    this.serverInfo = const {},
   });
 
+  factory CallRecord.fromMap(String id, Map<String, dynamic> map) {
+    T _enumFromString<T>(List<T> values, String? value, T defaultValue) {
+      if (value == null) return defaultValue;
+      return values.firstWhere(
+        (v) => v.toString().split('.').last == value,
+        orElse: () => defaultValue,
+      );
+    }
+
+    return CallRecord(
+      id: id,
+      channelId: map['channelId'] ?? '',
+      callStartedAt: map['call_started_at'] != null ? DateTime.parse(map['call_started_at']) : DateTime.now(),
+      callEndedAt: map['call_ended_at'] != null ? DateTime.parse(map['call_ended_at']) : null,
+      durationInSeconds: map['duration'] ?? 0,
+      deepfakeDetections: map['deepfake_detections'] ?? 0,
+      maxFakeProbability: (map['max_fake_prob'] as num?)?.toDouble() ?? 0.0,
+      averageProbability: (map['average_probability'] as num?)?.toDouble() ?? 0.0,
+      status: _enumFromString(CallStatus.values, map['status'], CallStatus.processing),
+      reportPdfUrl: map['report_pdf_url'],
+      keyFrames: (map['key_frames'] as List<dynamic>?)
+              ?.map((kf) => KeyFrame.fromMap(kf as Map<String, dynamic>))
+              .toList() ??
+          [],
+      userMemo: map['user_memo'],
+      // ✅✅✅ Firestore에서 읽어오기
+      deviceInfo: Map<String, String>.from(map['deviceInfo'] ?? {}),
+      serverInfo: Map<String, String>.from(map['serverInfo'] ?? {}),
+    );
+  }
+
   CallRecord copyWith({
+    String? id,
+    String? channelId,
+    DateTime? callStartedAt,
     DateTime? callEndedAt,
     int? durationInSeconds,
     int? deepfakeDetections,
     double? maxFakeProbability,
-    RiskLevel? riskLevel,
+    double? averageProbability,
     CallStatus? status,
     String? reportPdfUrl,
-    List<KeyFrame>? keyFrames, // copyWith에 반영
-    List<String>? gradcamImages,
-    String? highestProbImageName,
-    String? highestProbKeyFrameUrl,
-    String? highestProbGradCamUrl,
+    List<KeyFrame>? keyFrames,
+    String? userMemo,
+    // ✅✅✅ copyWith에 추가
+    Map<String, String>? deviceInfo,
+    Map<String, String>? serverInfo,
   }) {
     return CallRecord(
-      id: id,
-      channelId: channelId,
-      callStartedAt: callStartedAt,
+      id: id ?? this.id,
+      channelId: channelId ?? this.channelId,
+      callStartedAt: callStartedAt ?? this.callStartedAt,
       callEndedAt: callEndedAt ?? this.callEndedAt,
       durationInSeconds: durationInSeconds ?? this.durationInSeconds,
       deepfakeDetections: deepfakeDetections ?? this.deepfakeDetections,
       maxFakeProbability: maxFakeProbability ?? this.maxFakeProbability,
-      riskLevel: riskLevel ?? this.riskLevel,
+      averageProbability: averageProbability ?? this.averageProbability,
       status: status ?? this.status,
       reportPdfUrl: reportPdfUrl ?? this.reportPdfUrl,
       keyFrames: keyFrames ?? this.keyFrames,
-      gradcamImages: gradcamImages ?? this.gradcamImages,
-      highestProbImageName: highestProbImageName ?? this.highestProbImageName,
-      highestProbKeyFrameUrl:
-          highestProbKeyFrameUrl ?? this.highestProbKeyFrameUrl,
-      highestProbGradCamUrl:
-          highestProbGradCamUrl ?? this.highestProbGradCamUrl,
+      userMemo: userMemo ?? this.userMemo,
+      // ✅✅✅ copyWith에 반영
+      deviceInfo: deviceInfo ?? this.deviceInfo,
+      serverInfo: serverInfo ?? this.serverInfo,
     );
   }
 }
