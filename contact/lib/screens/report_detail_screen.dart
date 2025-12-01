@@ -151,7 +151,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                '※ AI 탐지 결과는 100% 정확하지 않을 수 있습니다. 최종 판단은 반드시 사용자 또는 담당자의 종합적인 검토가 필요합니다.',
+                'AI 탐지 결과는 100% 정확하지 않을 수 있습니다. 최종 판단은 반드시 사용자 또는 담당자의 종합적인 검토가 필요합니다.',
                 style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
               ),
             ),
