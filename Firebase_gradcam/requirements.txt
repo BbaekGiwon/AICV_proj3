@@ -1,0 +1,9 @@
+# Firebase Cloud Functions 라이브러리
+firebase-functions
+firebase-admin
+
+# AI 분석 라이브러리
+tensorflow==2.20.0
+opencv-python-headless  # 서버 환경에서는 GUI가 없는 headless 버전을 사용합니다.
+numpy
+
