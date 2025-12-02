@@ -459,7 +459,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         _remoteUid == null ||
         _snapshotImageSize == null ||
         _faceRect == null ||
-        _lastDetectionProbability < 0.5) {
+        _lastDetectionProbability < 101) {
       return const SizedBox.shrink();
     }
 

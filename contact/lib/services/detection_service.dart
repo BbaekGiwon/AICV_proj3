@@ -140,10 +140,10 @@ class DetectionService {
 
     final recognitions = await Tflite.runModelOnImage(
       path: croppedFacePath,
-      imageMean: 127.5,
-      imageStd: 127.5,
-      numResults: 2,
-      threshold: 0.1,
+      imageMean: 0.0,
+      imageStd: 255.0,
+      numResults: 1,
+      threshold: 0.0,
       asynch: true,
     );
 

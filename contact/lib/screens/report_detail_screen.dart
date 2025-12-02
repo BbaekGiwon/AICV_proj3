@@ -88,7 +88,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('위험도 기준 안내', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('딥페이크 탐지 기준 안내', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             _buildGuideRow(Icons.gpp_bad, Colors.red[700]!, '위험', '확률 85% 이상'),
             const SizedBox(height: 8),
