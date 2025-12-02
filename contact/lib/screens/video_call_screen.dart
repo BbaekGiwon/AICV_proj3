@@ -115,8 +115,9 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       },
     );
 
-    await _agoraService.engine?.enableVideo();
-    await _agoraService.engine?.startPreview();
+    // 아래 두 줄은 agora_service.dart의 joinChannel로 이동되었으므로 삭제합니다.
+    // await _agoraService.engine?.enableVideo();
+    // await _agoraService.engine?.startPreview();
 
     await _agoraService.joinChannel(
       channelId: widget.channelId,
@@ -137,7 +138,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   void _startDetectionLoop() {
     _detectionTimer?.cancel();
     _detectionTimer =
-        Timer.periodic(const Duration(milliseconds: 1000), (_) async {
+        Timer.periodic(const Duration(milliseconds: 1500), (_) async {
       if (_remoteUid != null && _isDetectionOn && !_isProcessing) {
         await _agoraService.takeSnapshot(_remoteUid!);
       }
@@ -327,7 +328,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     return {
       'Server Region': 'asia-northeast3 (Seoul)',
       'Analysis Engine': 'AICV-Detector-v1.0',
-      // ✅✅✅ 오류 해결을 위해 임시로 하드코딩으로 복원합니다.
       'AI Model': 'best_efficientnet_v13.tflite',
     };
   }
@@ -692,28 +692,29 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
             ),
           ),
         ),
-        Positioned(
-          top: 50,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                formatDuration(_duration),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
+        if (_timerStarted)
+          Positioned(
+            top: 50,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  formatDuration(_duration),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
         _buildDetectionStatus(),
         _buildFaceBoxesOverlay(),
       ],

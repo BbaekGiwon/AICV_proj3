@@ -36,13 +36,15 @@ class AgoraService {
       ),
     );
 
-    await _engine!.enableVideo();
-    await _engine!.startPreview();
+    // 채널 프로필과 역할을 초기화 시점에 설정합니다.
+    await _engine!.setChannelProfile(ChannelProfileType.channelProfileLiveBroadcasting);
+    await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
   }
 
   Future<void> joinChannel({required String channelId, required int uid}) async {
-    await _engine?.setChannelProfile(ChannelProfileType.channelProfileLiveBroadcasting);
-    await _engine?.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    // 채널 접속 직전에 비디오를 활성화하고 미리보기를 시작합니다.
+    await _engine?.enableVideo();
+    await _engine?.startPreview();
     
     await _engine!.joinChannel(
       token: AGORA_TOKEN,

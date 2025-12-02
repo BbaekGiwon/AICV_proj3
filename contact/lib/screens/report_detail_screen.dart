@@ -79,6 +79,40 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     return Colors.green;
   }
 
+  Widget _buildRiskGuide() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('위험도 기준 안내', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            _buildGuideRow(Icons.gpp_bad, Colors.red[700]!, '위험', '확률 85% 이상'),
+            const SizedBox(height: 8),
+            _buildGuideRow(Icons.warning_amber, Colors.red[400]!, '경고', '확률 70% 이상'),
+            const SizedBox(height: 8),
+            _buildGuideRow(Icons.error_outline, Colors.orange, '주의', '확률 50% 이상'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuideRow(IconData icon, Color color, String label, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+        const Spacer(),
+        Text(text, style: TextStyle(color: Colors.grey[600])),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -107,6 +141,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             const SizedBox(height: 24),
             _buildSectionTitle('상세 분석 자료'),
             const SizedBox(height: 8),
+            _buildRiskGuide(),
+            const SizedBox(height: 16),
             if (_record.keyFrames.isNotEmpty) ...[
               _buildAnalysisFrames(),
               const SizedBox(height: 16),
