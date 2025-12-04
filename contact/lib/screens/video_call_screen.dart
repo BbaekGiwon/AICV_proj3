@@ -359,16 +359,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
   Color _currentStatusColor() {
     final p = _lastDetectionProbability;
-    if (p >= 0.85) {
-      return Colors.red[700]!;
-    } else if (p >= 0.7) {
+    if (p >= 0.7) {
       return Colors.red[400]!;
-    } else if (p >= 0.5) {
+    } else if (p >= 0.2) {
       return Colors.orange;
-    } else if (p >= 0.3) {
-      return Colors.green[600]!;
     } else {
-      return Colors.green[800]!;
+      return Colors.green[600]!;
     }
   }
 
@@ -410,21 +406,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     String statusText;
     final statusColor = _currentStatusColor();
 
-    if (p >= 0.85) {
-      statusText =
-      '🚨 위험: 딥페이크 확신! (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.7) {
-      statusText =
-      '⚠️ 경고: 딥페이크 의심 (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.5) {
-      statusText =
-      '🤔 주의: 딥페이크 가능성 (${(p * 100).toStringAsFixed(1)}%)';
-    } else if (p >= 0.3) {
-      statusText =
-      '✅ 안전: Real 가능성 높음 (${(p * 100).toStringAsFixed(1)}%)';
+    if (p >= 0.7) {
+      statusText = '🚨 위험: 딥페이크 의심';
+    } else if (p >= 0.2) {
+      statusText = '🤔 주의: 딥페이크 가능성';
     } else {
-      statusText =
-      '✨ 안전: Real 확신 (${(p * 100).toStringAsFixed(1)}%)';
+      statusText = '✅ 안전';
     }
 
     return Positioned(
