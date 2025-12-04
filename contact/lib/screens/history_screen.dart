@@ -47,12 +47,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _navigateToDetail(BuildContext context, CallRecord record) {
-    if (record.status == CallStatus.done) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => ReportDetailScreen(record: record)),
-      );
-    }
+    // 이제 상세 화면에서 '분석 중' 또는 '오류' 상태도 처리하므로,
+    // 통화 기록의 상태와 관계없이 상세 화면으로 이동합니다.
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ReportDetailScreen(recordId: record.id)),
+    );
   }
 
   void _deleteSelectedRecords() async {

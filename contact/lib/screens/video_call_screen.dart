@@ -18,6 +18,7 @@ import '../models/call_record.dart';
 import '../services/agora_service.dart';
 import '../services/detection_service.dart';
 import '../services/permission_service.dart';
+import '../services/verification_service.dart';
 import '../utils/timer_formatter.dart';
 
 class VideoCallScreen extends StatefulWidget {
@@ -33,6 +34,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   final AgoraService _agoraService = AgoraService();
   final DetectionService _detectionService = DetectionService();
   late final CallRecordRepository _repository;
+  final VerificationService _verificationService = VerificationService();
 
   bool _joined = false;
   int? _remoteUid;
@@ -115,10 +117,6 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
       },
     );
 
-    // 아래 두 줄은 agora_service.dart의 joinChannel로 이동되었으므로 삭제합니다.
-    // await _agoraService.engine?.enableVideo();
-    // await _agoraService.engine?.startPreview();
-
     await _agoraService.joinChannel(
       channelId: widget.channelId,
       uid: _myUid,
@@ -171,8 +169,12 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         final fakeProb = result.fakeProb;
         _allFrameProbabilities.add(fakeProb);
 
-        if (fakeProb >= 0.5) {
+        if (fakeProb >= 0.2) {
           _detectionSnapshots.add((filePath, fakeProb, result.faceRect!));
+          _detectionSnapshots.sort((a, b) => b.$2.compareTo(a.$2));
+          if (_detectionSnapshots.length > 20) {
+            _detectionSnapshots.removeLast();
+          }
         }
 
         setState(() {
@@ -238,49 +240,44 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         durationInSeconds: _duration.inSeconds,
         status: CallStatus.processing,
         callEndedAt: DateTime.now(),
+        deepfakeDetections: _deepfakeDetections,
+        maxFakeProbability: maxProb,
+        averageProbability: averageProb,
       );
       callHistoryNotifier.value = [placeholderRecord, ...callHistoryNotifier.value];
 
       try {
         List<KeyFrame> localKeyFrames = [];
-        _detectionSnapshots.sort((a, b) => b.$2.compareTo(a.$2));
-        final topSnapshots = _detectionSnapshots.take(4);
-        for (final snapshot in topSnapshots) {
+        for (final snapshot in _detectionSnapshots) {
           final croppedImagePath = await _cropAndSaveFace(snapshot.$1, snapshot.$3);
           if (croppedImagePath != null) {
             localKeyFrames.add(KeyFrame(url: croppedImagePath, probability: snapshot.$2));
           }
         }
 
+        print('⏳ Firebase에 1차 키프레임 업로드 시작: $recordId');
+        final uploadedKeyFrames = await _repository.uploadKeyFrames(recordId, localKeyFrames);
+
         final deviceInfo = await _getDeviceInfo();
         final serverInfo = _getServerInfo();
 
-        print('⏳ Firebase에 업로드 시작: $recordId');
-        final uploadedKeyFrames = await _repository.uploadKeyFrames(recordId, localKeyFrames);
-
-        final finalRecord = placeholderRecord.copyWith(
-          deepfakeDetections: _deepfakeDetections,
-          maxFakeProbability: maxProb,
-          averageProbability: averageProb,
+        final provisionalRecord = placeholderRecord.copyWith(
           keyFrames: uploadedKeyFrames,
-          status: CallStatus.done,
           deviceInfo: deviceInfo,
           serverInfo: serverInfo,
         );
 
-        await _repository.createOrUpdateCallRecord(finalRecord);
+        await _repository.createOrUpdateCallRecord(provisionalRecord);
+        print('✅ 1차 정보 Firestore 저장 완료: $recordId');
 
-        final index = callHistoryNotifier.value.indexWhere((rec) => rec.id == recordId);
-        if (index != -1) {
-          final newList = List<CallRecord>.from(callHistoryNotifier.value);
-          newList[index] = finalRecord;
-          callHistoryNotifier.value = newList;
-          print('✅ Firebase에 업로드 성공: $recordId');
-        }
+        await _verificationService.requestVerification(recordId, uploadedKeyFrames);
 
       } catch (e) {
         print('🚨 Firebase 전체 저장 과정 오류: $e');
         final errorRecord = placeholderRecord.copyWith(status: CallStatus.error);
+
+        await _repository.createOrUpdateCallRecord(errorRecord);
+
         final index = callHistoryNotifier.value.indexWhere((rec) => rec.id == recordId);
         if (index != -1) {
           final newList = List<CallRecord>.from(callHistoryNotifier.value);

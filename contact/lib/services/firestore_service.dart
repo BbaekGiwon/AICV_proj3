@@ -3,6 +3,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Stream<DocumentSnapshot> getRecordStream(String recordId) {
+    return _db.collection("call_records").doc(recordId).snapshots();
+  }
+
   Future<QuerySnapshot> getAllCallRecords() {
     // ✅ orderBy를 제거하여, 필드 존재 여부와 상관없이 모든 문서를 가져오도록 수정
     return _db.collection("call_records").get();
@@ -26,6 +30,9 @@ class FirestoreService {
     await _db.collection("call_records").doc(recordId).delete();
   }
 
+
+
+  //TODO 이거는 안쓰이는 함수인건가?
   Future<void> addUrls({
     required String recordId,
     List<String>? rawFrames,

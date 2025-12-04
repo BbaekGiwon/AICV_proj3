@@ -13,6 +13,11 @@ class ReportRepository {
 
   ReportRepository(this._firestore, this._storage);
 
+  /// Firestore에서 특정 통화 기록의 변경 사항을 실시간으로 스트리밍합니다.
+  Stream<DocumentSnapshot> getCallRecordStream(String recordId) {
+    return _firestore.getRecordStream(recordId);
+  }
+
   /// 서버에 보고서 생성 요청 → 분석 파이프라인 실행
   Future<Map<String, dynamic>> requestReportGeneration({
     required String serverUrl, // ex: "https://api.myserver.com/generateReport"
