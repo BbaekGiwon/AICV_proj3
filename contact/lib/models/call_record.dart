@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 class KeyFrame {
@@ -43,7 +44,6 @@ class CallRecord {
   final String? reportPdfUrl;
   final List<KeyFrame> keyFrames;
   final String? userMemo;
-  // ✅✅✅ 보고서 정보 필드 추가
   final Map<String, String> deviceInfo;
   final Map<String, String> serverInfo;
 
@@ -60,10 +60,14 @@ class CallRecord {
     this.reportPdfUrl,
     this.keyFrames = const [],
     this.userMemo,
-    // ✅✅✅ 생성자에 기본값 추가
     this.deviceInfo = const {},
     this.serverInfo = const {},
   });
+
+  factory CallRecord.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    return CallRecord.fromMap(doc.id, data);
+  }
 
   factory CallRecord.fromMap(String id, Map<String, dynamic> map) {
     T _enumFromString<T>(List<T> values, String? value, T defaultValue) {
@@ -77,20 +81,19 @@ class CallRecord {
     return CallRecord(
       id: id,
       channelId: map['channelId'] ?? '',
-      callStartedAt: map['call_started_at'] != null ? DateTime.parse(map['call_started_at']) : DateTime.now(),
-      callEndedAt: map['call_ended_at'] != null ? DateTime.parse(map['call_ended_at']) : null,
-      durationInSeconds: map['duration'] ?? 0,
-      deepfakeDetections: map['deepfake_detections'] ?? 0,
-      maxFakeProbability: (map['max_fake_prob'] as num?)?.toDouble() ?? 0.0,
-      averageProbability: (map['average_probability'] as num?)?.toDouble() ?? 0.0,
+      callStartedAt: (map['callStartedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      callEndedAt: (map['callEndedAt'] as Timestamp?)?.toDate(),
+      durationInSeconds: map['durationInSeconds'] ?? 0,
+      deepfakeDetections: map['deepfakeDetections'] ?? 0,
+      maxFakeProbability: (map['maxFakeProbability'] as num?)?.toDouble() ?? 0.0,
+      averageProbability: (map['averageProbability'] as num?)?.toDouble() ?? 0.0,
       status: _enumFromString(CallStatus.values, map['status'], CallStatus.processing),
       reportPdfUrl: map['report_pdf_url'],
-      keyFrames: (map['key_frames'] as List<dynamic>?)
+      keyFrames: (map['keyFrames'] as List<dynamic>?)
               ?.map((kf) => KeyFrame.fromMap(kf as Map<String, dynamic>))
               .toList() ??
           [],
-      userMemo: map['user_memo'],
-      // ✅✅✅ Firestore에서 읽어오기
+      userMemo: map['userMemo'],
       deviceInfo: Map<String, String>.from(map['deviceInfo'] ?? {}),
       serverInfo: Map<String, String>.from(map['serverInfo'] ?? {}),
     );
@@ -109,7 +112,6 @@ class CallRecord {
     String? reportPdfUrl,
     List<KeyFrame>? keyFrames,
     String? userMemo,
-    // ✅✅✅ copyWith에 추가
     Map<String, String>? deviceInfo,
     Map<String, String>? serverInfo,
   }) {
@@ -126,7 +128,6 @@ class CallRecord {
       reportPdfUrl: reportPdfUrl ?? this.reportPdfUrl,
       keyFrames: keyFrames ?? this.keyFrames,
       userMemo: userMemo ?? this.userMemo,
-      // ✅✅✅ copyWith에 반영
       deviceInfo: deviceInfo ?? this.deviceInfo,
       serverInfo: serverInfo ?? this.serverInfo,
     );
