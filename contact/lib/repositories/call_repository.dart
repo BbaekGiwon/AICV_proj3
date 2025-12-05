@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:path/path.dart' as p;
 import '../models/call_record.dart';
 import '../services/firestore_service.dart';
@@ -10,42 +12,68 @@ class CallRecordRepository {
 
   CallRecordRepository(this._firestore, this._storage);
 
-  Future<List<CallRecord>> getAllCallRecords() async {
+  Future<List<CallRecord>> fetchAllRecordsOnce() async {
     final snapshot = await _firestore.getAllCallRecords();
     final records = snapshot.docs
-        .map((doc) => CallRecord.fromMap(doc.id, doc.data() as Map<String, dynamic>))
+        .map((doc) => CallRecord.fromFirestore(doc))
         .toList();
     records.sort((a, b) => b.callStartedAt.compareTo(a.callStartedAt));
     return records;
   }
 
+  Stream<List<CallRecord>> getAllRecordsStream() {
+    return _firestore.getAllCallRecordsStream().map((snapshot) {
+      final records = snapshot.docs
+          .map((doc) => CallRecord.fromFirestore(doc))
+          .toList();
+      records.sort((a, b) => b.callStartedAt.compareTo(a.callStartedAt));
+      return records;
+    });
+  }
+
+  Stream<CallRecord?> getRecordStream(String recordId) {
+    return _firestore.getCallRecordStream(recordId).map((snapshot) {
+      if (snapshot.exists) {
+        return CallRecord.fromFirestore(snapshot);
+      }
+      return null;
+    });
+  }
+
   Future<void> updateMemo(String recordId, String memo) async {
-    await _firestore.updateCallRecord(recordId, {'user_memo': memo});
+    await _firestore.updateCallRecord(recordId, {'userMemo': memo});
   }
 
   Future<void> deleteCallRecords(List<String> recordIds) async {
-    final recordsToDelete = callHistoryNotifier.value
-        .where((record) => recordIds.contains(record.id))
-        .toList();
+    List<Future> deleteFutures = [];
 
-    List<Future> deleteImageFutures = [];
-    for (final record in recordsToDelete) {
+    for (String id in recordIds) {
+      // DB에서 최신 레코드 정보를 직접 조회
+      final doc = await _firestore.getCallRecord(id);
+      if (!doc.exists) continue;
+
+      final record = CallRecord.fromFirestore(doc);
+
+      // Storage 파일 삭제 로직
       for (final keyFrame in record.keyFrames) {
         if (keyFrame.url.isNotEmpty) {
-          deleteImageFutures.add(_storage.deleteFileByUrl(keyFrame.url));
+          deleteFutures.add(_storage.deleteFileByUrl(keyFrame.url));
         }
         if (keyFrame.gradCamUrl != null && keyFrame.gradCamUrl!.isNotEmpty) {
-          deleteImageFutures.add(_storage.deleteFileByUrl(keyFrame.gradCamUrl!));
+          deleteFutures.add(_storage.deleteFileByUrl(keyFrame.gradCamUrl!));
         }
       }
       if (record.reportPdfUrl != null && record.reportPdfUrl!.isNotEmpty) {
-        deleteImageFutures.add(_storage.deleteFileByUrl(record.reportPdfUrl!));
+        deleteFutures.add(_storage.deleteFileByUrl(record.reportPdfUrl!));
       }
+      
+      // Firestore 문서 삭제 로직
+      deleteFutures.add(_firestore.deleteCallRecord(id));
     }
-    await Future.wait(deleteImageFutures.map((f) => f.catchError((e) => print(e))));
 
-    final deleteDbFutures = recordIds.map((id) => _firestore.deleteCallRecord(id));
-    await Future.wait(deleteDbFutures);
+    // 모든 삭제 작업을 동시에 실행
+    final results = await Future.wait(deleteFutures.map((f) => f.catchError((e) => e)));
+    results.where((res) => res is Exception).forEach((err) => print('🚨 삭제 중 오류 발생: $err'));
   }
 
   Future<List<KeyFrame>> uploadKeyFrames(
@@ -70,25 +98,10 @@ class CallRecordRepository {
 
       if (downloadUrl == null) continue;
 
-      String? gradCamDownloadUrl;
-      if (frame.gradCamUrl != null && frame.gradCamUrl!.isNotEmpty) {
-        final gradCamFile = File(frame.gradCamUrl!);
-        if (await gradCamFile.exists()) {
-          final fileName = p.basename(gradCamFile.path);
-          final uploadPath = 'call_records/$recordId/grad_cams/$fileName';
-          gradCamDownloadUrl = await _storage.uploadFile(uploadPath, gradCamFile);
-          try {
-            await gradCamFile.delete();
-          } catch (e) {
-            print('🚨 Grad-CAM 임시 파일 삭제 실패: $e');
-          }
-        }
-      }
-
       uploadedKeyFrames.add(KeyFrame(
         url: downloadUrl,
         probability: frame.probability,
-        gradCamUrl: gradCamDownloadUrl,
+        gradCamUrl: null, 
       ));
     }
     return uploadedKeyFrames;
@@ -99,19 +112,18 @@ class CallRecordRepository {
 
     final data = {
       'channelId': record.channelId,
-      'call_started_at': record.callStartedAt.toIso8601String(),
-      'call_ended_at': record.callEndedAt?.toIso8601String(),
-      'duration': record.durationInSeconds,
-      'deepfake_detections': record.deepfakeDetections,
-      'max_fake_prob': record.maxFakeProbability,
-      'average_probability': record.averageProbability,
+      'callStartedAt': Timestamp.fromDate(record.callStartedAt),
+      'callEndedAt': record.callEndedAt != null ? Timestamp.fromDate(record.callEndedAt!) : null,
+      'durationInSeconds': record.durationInSeconds,
       'status': record.status.toString().split('.').last,
-      'report_pdf_url': record.reportPdfUrl,
-      'key_frames': keyFramesAsMap,
-      'user_memo': record.userMemo,
-      // ✅✅✅ 보고서 정보 필드 저장
+      'reportPdfUrl': record.reportPdfUrl,
+      'keyFrames': keyFramesAsMap,
+      'userMemo': record.userMemo,
       'deviceInfo': record.deviceInfo,
       'serverInfo': record.serverInfo,
+      'deepfakeDetections': record.deepfakeDetections,
+      'maxFakeProbability': record.maxFakeProbability,
+      'averageProbability': record.averageProbability,
     };
 
     await _firestore.createCallRecord(record.id, data);

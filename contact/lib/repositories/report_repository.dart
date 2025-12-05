@@ -15,7 +15,7 @@ class ReportRepository {
 
   /// Firestore에서 특정 통화 기록의 변경 사항을 실시간으로 스트리밍합니다.
   Stream<DocumentSnapshot> getCallRecordStream(String recordId) {
-    return _firestore.getRecordStream(recordId);
+    return _firestore.getCallRecordStream(recordId); // 수정된 부분
   }
 
   /// 서버에 보고서 생성 요청 → 분석 파이프라인 실행

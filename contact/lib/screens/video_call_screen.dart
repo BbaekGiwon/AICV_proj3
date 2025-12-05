@@ -169,13 +169,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
         final fakeProb = result.fakeProb;
         _allFrameProbabilities.add(fakeProb);
 
-        if (fakeProb >= 0.2) {
-          _detectionSnapshots.add((filePath, fakeProb, result.faceRect!));
-          _detectionSnapshots.sort((a, b) => b.$2.compareTo(a.$2));
-          if (_detectionSnapshots.length > 20) {
-            _detectionSnapshots.removeLast();
-          }
-        }
+        // 모든 프레임을 제한 없이 저장
+        _detectionSnapshots.add((filePath, fakeProb, result.faceRect!));
 
         setState(() {
           _lastDetectionProbability = fakeProb;
@@ -203,8 +198,11 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     _callTimer?.cancel();
     _stopDetectionLoop();
 
+    // 안전한 복사본을 만들어 사용
+    final List<(String, double, Rect)> snapshotsToProcess = List.from(_detectionSnapshots);
+
     if (_remoteUid != null) {
-      _processAndSaveCallRecord();
+      _processAndSaveCallRecord(snapshotsToProcess);
     }
 
     if (mounted) {
@@ -215,16 +213,19 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
     await _detectionService.dispose();
   }
 
-  void _processAndSaveCallRecord() {
+  void _processAndSaveCallRecord(List<(String, double, Rect)> snapshots) {
     Future(() async {
+      // 확률 순으로 정렬
+      snapshots.sort((a, b) => b.$2.compareTo(a.$2));
+
       final now = DateTime.now();
       final datePart = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
       final timePart = "${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}-${now.second.toString().padLeft(2, '0')}";
       final recordId = "${datePart}_${timePart}_${widget.channelId}";
 
       double maxProb = 0.0;
-      if (_detectionSnapshots.isNotEmpty) {
-        maxProb = _detectionSnapshots.map((e) => e.$2).reduce(max);
+      if (snapshots.isNotEmpty) {
+        maxProb = snapshots.map((e) => e.$2).reduce(max);
       }
 
       double averageProb = 0.0;
@@ -248,7 +249,7 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
 
       try {
         List<KeyFrame> localKeyFrames = [];
-        for (final snapshot in _detectionSnapshots) {
+        for (final snapshot in snapshots) {
           final croppedImagePath = await _cropAndSaveFace(snapshot.$1, snapshot.$3);
           if (croppedImagePath != null) {
             localKeyFrames.add(KeyFrame(url: croppedImagePath, probability: snapshot.$2));
@@ -324,8 +325,8 @@ class _VideoCallScreenState extends State<VideoCallScreen> {
   Map<String, String> _getServerInfo() {
     return {
       'Server Region': 'asia-northeast3 (Seoul)',
-      'Analysis Engine': 'AICV-Detector-v1.0',
-      'AI Model': 'best_efficientnet_v13.tflite',
+      'Analysis Engine': 'AICV-Detector-v2.0',
+      'AI Model': 'SigLIP2_so400m',
     };
   }
 

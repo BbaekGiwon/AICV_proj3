@@ -43,8 +43,8 @@ class _SplashScreenState extends State<SplashScreen> {
       final storageService = StorageService();
       final callRepository = CallRecordRepository(firestoreService, storageService);
       
-      // ✅✅✅ 주석을 풀고, 정상적으로 데이터를 불러옵니다. ✅✅✅
-      final records = await callRepository.getAllCallRecords(); 
+      // ✅ 새로운 '일회성 로더' 함수를 호출하도록 수정
+      final records = await callRepository.fetchAllRecordsOnce(); 
 
       callHistoryNotifier.value = records;
       print('✅ [DEBUG] Firestore에서 ${records.length}개의 통화 기록을 불러왔습니다.');

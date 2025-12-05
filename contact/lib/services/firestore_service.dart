@@ -3,56 +3,40 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Stream<DocumentSnapshot> getRecordStream(String recordId) {
-    return _db.collection("call_records").doc(recordId).snapshots();
+  // Splash Screen을 위한 일회성 데이터 로더
+  Future<QuerySnapshot> getAllCallRecords() {
+    return _db.collection("call_records").get();
   }
 
-  Future<QuerySnapshot> getAllCallRecords() {
-    // ✅ orderBy를 제거하여, 필드 존재 여부와 상관없이 모든 문서를 가져오도록 수정
-    return _db.collection("call_records").get();
+  // 삭제 시, 특정 레코드의 최신 정보를 가져오기 위한 함수
+  Future<DocumentSnapshot> getCallRecord(String recordId) {
+    return _db.collection("call_records").doc(recordId).get();
+  }
+
+  // History Screen을 위한 실시간 스트림
+  Stream<QuerySnapshot> getAllCallRecordsStream() {
+    return _db.collection("call_records").snapshots();
+  }
+
+  // Report Detail Screen을 위한 단일 레코드 실시간 스트림
+  Stream<DocumentSnapshot> getCallRecordStream(String recordId) {
+    return _db.collection("call_records").doc(recordId).snapshots();
   }
 
   Future<void> createCallRecord(String recordId, Map<String, dynamic> data) async {
     final docRef = _db.collection("call_records").doc(recordId);
-    data['created_at'] = FieldValue.serverTimestamp();
-    data['updated_at'] = FieldValue.serverTimestamp();
+    data['createdAt'] = FieldValue.serverTimestamp();
+    data['updatedAt'] = FieldValue.serverTimestamp();
     await docRef.set(data);
   }
 
   Future<void> updateCallRecord(String recordId, Map<String, dynamic> data) async {
     final docRef = _db.collection("call_records").doc(recordId);
-    data['updated_at'] = FieldValue.serverTimestamp();
+    data['updatedAt'] = FieldValue.serverTimestamp();
     await docRef.update(data);
   }
 
-  // ✅✅✅ 통화 기록 삭제 메서드를 추가합니다. ✅✅✅
   Future<void> deleteCallRecord(String recordId) async {
     await _db.collection("call_records").doc(recordId).delete();
-  }
-
-
-
-  //TODO 이거는 안쓰이는 함수인건가?
-  Future<void> addUrls({
-    required String recordId,
-    List<String>? rawFrames,
-    List<String>? keyFrames,
-    List<String>? gradcamImages,
-  }) async {
-    final updates = <String, dynamic>{};
-
-    if (rawFrames != null && rawFrames.isNotEmpty) {
-      updates["raw_frames"] = FieldValue.arrayUnion(rawFrames);
-    }
-    if (keyFrames != null && keyFrames.isNotEmpty) {
-      updates["key_frames"] = FieldValue.arrayUnion(keyFrames);
-    }
-    if (gradcamImages != null && gradcamImages.isNotEmpty) {
-      updates["gradcam_images"] = FieldValue.arrayUnion(gradcamImages);
-    }
-
-    updates["updated_at"] = FieldValue.serverTimestamp();
-
-    await _db.collection("call_records").doc(recordId).update(updates);
   }
 }

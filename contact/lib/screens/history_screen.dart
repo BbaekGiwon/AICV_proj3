@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:contact/repositories/call_repository.dart';
 import 'package:contact/screens/report_detail_screen.dart';
 import 'package:contact/services/firestore_service.dart';
@@ -16,6 +17,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _isSelectionMode = false;
   final Set<String> _selectedRecordIds = {};
   late final CallRecordRepository _repository;
+  StreamSubscription? _historySubscription;
 
   @override
   void initState() {
@@ -23,6 +25,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final firestoreService = FirestoreService();
     final storageService = StorageService();
     _repository = CallRecordRepository(firestoreService, storageService);
+    
+    // 실시간으로 Firestore의 변경사항을 감지하여 callHistoryNotifier를 업데이트
+    _historySubscription = _repository.getAllRecordsStream().listen((recordsFromDb) {
+      final currentRecords = Map<String, CallRecord>.fromIterable(
+        callHistoryNotifier.value,
+        key: (rec) => rec.id,
+        value: (rec) => rec,
+      );
+
+      for (var record in recordsFromDb) {
+        currentRecords[record.id] = record;
+      }
+
+      final updatedList = currentRecords.values.toList();
+      updatedList.sort((a, b) => b.callStartedAt.compareTo(a.callStartedAt));
+
+      callHistoryNotifier.value = updatedList;
+    });
+  }
+
+  @override
+  void dispose() {
+    _historySubscription?.cancel();
+    super.dispose();
   }
 
   void _enterSelectionMode() {
@@ -47,8 +73,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _navigateToDetail(BuildContext context, CallRecord record) {
-    // 이제 상세 화면에서 '분석 중' 또는 '오류' 상태도 처리하므로,
-    // 통화 기록의 상태와 관계없이 상세 화면으로 이동합니다.
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => ReportDetailScreen(recordId: record.id)),
@@ -77,9 +101,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (shouldDelete == true) {
       try {
         await _repository.deleteCallRecords(_selectedRecordIds.toList());
-        final currentHistory = List<CallRecord>.from(callHistoryNotifier.value)
-          ..removeWhere((record) => _selectedRecordIds.contains(record.id));
-        callHistoryNotifier.value = currentHistory;
         _exitSelectionMode();
 
         if (mounted) {
@@ -152,19 +173,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   final Color riskColor;
                   final IconData riskIcon;
 
+                  final p = record.avgSecondStageProb;
+
                   if (isProcessing) {
                     riskColor = Colors.grey;
                     riskIcon = Icons.hourglass_empty;
                   } else {
-                    // ✅✅✅ record.riskLevel 대신 record.averageProbability를 사용하도록 변경
-                    final p = record.averageProbability;
-                    if (p >= 0.85) {
+                    if (p == null) {
+                      riskColor = Colors.grey;
+                      riskIcon = Icons.help_outline;
+                    } else if (p >= 0.7) {
                       riskColor = Colors.red[700]!;
                       riskIcon = Icons.gpp_bad;
-                    } else if (p >= 0.7) {
-                      riskColor = Colors.red[400]!;
-                      riskIcon = Icons.warning_amber;
-                    } else if (p >= 0.5) {
+                    } else if (p >= 0.2) {
                       riskColor = Colors.orange;
                       riskIcon = Icons.error_outline;
                     } else {
@@ -209,12 +230,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           const SizedBox(height: 2),
                           if (isProcessing)
                             const Text(
-                              '분석 중입니다...',
+                              '서버에서 정밀 분석 중입니다...',
                               style: TextStyle(fontSize: 12, color: Colors.blueAccent),
                             )
                           else
                             Text(
-                              '탐지: ${record.deepfakeDetections}회 / 평균 딥페이크 확률: ${(record.averageProbability * 100).toStringAsFixed(1)}%',
+                              record.avgSecondStageProb != null
+                                  ? '탐지: ${record.secondStageDetections ?? 0}회 / 평균 딥페이크 확률: ${(record.avgSecondStageProb! * 100).toStringAsFixed(1)}%'
+                                  : '정밀 분석 완료',
                               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             ),
                         ],

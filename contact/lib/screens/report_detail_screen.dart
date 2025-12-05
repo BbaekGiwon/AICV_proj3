@@ -1,13 +1,8 @@
+import 'package:contact/models/call_record.dart';
+import 'package:contact/repositories/call_repository.dart';
+import 'package:contact/services/firestore_service.dart';
+import 'package:contact/services/storage_service.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
-
-import '../models/call_record.dart';
-import '../repositories/report_repository.dart';
-import '../services/firestore_service.dart';
-import '../services/storage_service.dart';
 
 class ReportDetailScreen extends StatefulWidget {
   final String recordId;
@@ -19,272 +14,514 @@ class ReportDetailScreen extends StatefulWidget {
 }
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
-  late final ReportRepository _reportRepository;
-  late final Stream<DocumentSnapshot> _recordStream;
+  late final CallRecordRepository _repository;
+  late final TextEditingController _memoController;
+  bool _isEditingMemo = false;
 
   @override
   void initState() {
     super.initState();
-    // Firestore와 Storage 서비스 인스턴스를 생성합니다.
     final firestoreService = FirestoreService();
     final storageService = StorageService();
-    // ReportRepository를 초기화합니다.
-    _reportRepository = ReportRepository(firestoreService, storageService);
-    _recordStream = _reportRepository.getCallRecordStream(widget.recordId);
+    _repository = CallRecordRepository(firestoreService, storageService);
+    _memoController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _memoController.dispose();
+    super.dispose();
+  }
+
+  void _saveMemo(CallRecord record) async {
+    final newMemo = _memoController.text;
+    try {
+      await _repository.updateMemo(record.id, newMemo);
+      if (mounted) {
+        setState(() {
+          _isEditingMemo = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('메모가 저장되었습니다.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('메모 저장에 실패했습니다: $e')));
+      }
+    }
+  }
+
+  void _enterEditMode() {
+    setState(() => _isEditingMemo = true);
+  }
+
+  void _exitEditMode(String? currentMemo) {
+    setState(() {
+      _memoController.text = currentMemo ?? '';
+      _isEditingMemo = false;
+    });
+  }
+
+  Color? _getColorFromProbability(double? probability) {
+    if (probability == null) return null;
+    if (probability >= 0.7) return Colors.red[700]!;
+    if (probability >= 0.2) return Colors.orange;
+    return Colors.green;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('통화 분석 리포트'),
-        centerTitle: true,
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: _recordStream,
+      appBar: AppBar(title: const Text('상세 통화 기록'), elevation: 0),
+      body: StreamBuilder<CallRecord?>(
+        stream: _repository.getRecordStream(widget.recordId),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('오류가 발생했습니다: ${snapshot.error}'));
+            return Center(child: Text('오류: ${snapshot.error}'));
           }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
+          if (!snapshot.hasData || snapshot.data == null) {
             return const Center(child: Text('통화 기록을 찾을 수 없습니다.'));
           }
 
-          final record = CallRecord.fromFirestore(snapshot.data!);
+          final record = snapshot.data!;
 
-          // status 값에 따라 다른 UI를 보여줍니다.
-          switch (record.status) {
-            case CallStatus.processing:
-              return _buildProcessingWidget(record);
-            case CallStatus.error:
-              return _buildErrorWidget(record);
-            case CallStatus.done:
-            default:
-              return _buildReportContent(record);
+          if (!_isEditingMemo && _memoController.text != (record.userMemo ?? '')) {
+            _memoController.text = record.userMemo ?? '';
           }
+
+          if (record.status == CallStatus.processing) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 24),
+                  Text('서버에서 정밀 분석을 진행하고 있습니다...', style: TextStyle(fontSize: 16)),
+                  Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: Text(
+                      '결과가 나오면 화면이 자동으로 새로고침 됩니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return _buildReportBody(record);
         },
       ),
     );
   }
 
-  // "분석 중" 상태일 때 보여줄 위젯
-  Widget _buildProcessingWidget(CallRecord record) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 20),
-          const Text(
-            '서버에서 2차 검증을 진행하고 있습니다.',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '분석이 완료되면 이 화면이 자동으로 새로고침됩니다.',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          _buildSimpleInfoCard(record),
-        ],
-      ),
-    );
-  }
-
-  // "오류" 상태일 때 보여줄 위젯
-  Widget _buildErrorWidget(CallRecord record) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, color: Colors.red[400], size: 60),
-          const SizedBox(height: 20),
-          const Text(
-            '리포트 생성 중 오류가 발생했습니다.',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '네트워크 상태를 확인하거나 잠시 후 다시 시도해주세요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          _buildSimpleInfoCard(record),
-        ],
-      ),
-    );
-  }
-
-  // "완료" 상태일 때 보여줄 메인 리포트 위젯
-  Widget _buildReportContent(CallRecord record) {
-    final keyFrames = record.keyFrames;
-
+  Widget _buildReportBody(CallRecord record) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSimpleInfoCard(record),
+          _buildSectionTitle('통화 개요'),
+          _buildInfoCard(children: [
+            _buildInfoRow('채널 ID', record.channelId),
+            _buildInfoRow('통화 시작', record.callStartedAt.toLocal().toString().substring(0, 16)),
+            _buildInfoRow('통화 종료', record.callEndedAt?.toLocal().toString().substring(0, 16) ?? 'N/A'),
+            _buildInfoRow('총 통화시간', '${record.durationInSeconds}초'),
+          ]),
           const SizedBox(height: 24),
-          _buildSectionTitle('탐지된 주요 프레임', '딥페이크 확률이 가장 높게 나타난 프레임입니다.'),
-          const SizedBox(height: 12),
-          keyFrames.isEmpty
-              ? const Text('탐지된 프레임이 없습니다.')
-              : _buildKeyFrameGallery(keyFrames),
+          _buildSectionTitle('AI 정밀 분석 결과'),
+          _buildInfoCard(highlight: true, children: [
+            _buildInfoRow(
+              '평균 딥페이크 확률',
+              record.avgSecondStageProb != null
+                  ? '${(record.avgSecondStageProb! * 100).toStringAsFixed(1)}%'
+                  : '정밀 분석중...',
+              valueColor: _getColorFromProbability(record.avgSecondStageProb),
+            ),
+            _buildInfoRow(
+              '딥페이크 탐지 횟수',
+              record.secondStageDetections != null
+                  ? '${record.secondStageDetections}회'
+                  : '정밀 분석중...',
+            ),
+            _buildInfoRow(
+              '최대 의심 확률',
+              record.maxSecondStageProb != null
+                  ? '${(record.maxSecondStageProb! * 100).toStringAsFixed(1)}%'
+                  : '정밀 분석중...',
+              valueColor: _getColorFromProbability(record.maxSecondStageProb),
+            ),
+          ]),
           const SizedBox(height: 24),
-          _buildSectionTitle('분석 정보', '통화 및 분석 환경에 대한 정보입니다.'),
-          const SizedBox(height: 12),
-          _buildInfoTable(record),
+          _buildSectionTitle('상세 분석 자료'),
+          const SizedBox(height: 8),
+          _buildRiskGuide(),
+          const SizedBox(height: 16),
+          if (record.keyFrames.isNotEmpty) ...[
+            _buildAnalysisFrames(record),
+            const SizedBox(height: 16),
+          ],
+          _buildSectionTitle('사용자 메모'),
+          _buildMemoCard(record),
+          _buildEnvironmentInfo(record),
+          const SizedBox(height: 24),
+          if (record.reportPdfUrl != null)
+            Center(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('종합 보고서 다운로드'),
+                onPressed: () {},
+                style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+              ),
+            ),
+          _buildDisclaimer(),
         ],
       ),
     );
   }
 
-  // 모든 상태에서 공통으로 사용할 간단한 정보 카드
-  Widget _buildSimpleInfoCard(CallRecord record) {
+  Widget _buildRiskGuide() {
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInfoRow(
-                Icons.calendar_today, '통화 일시', DateFormat('yyyy-MM-dd HH:mm').format(record.callStartedAt)),
+            const Text('딥페이크 탐지 기준 안내', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            _buildGuideRow(Icons.gpp_bad, Colors.red[700]!, '위험', '확률 70% 이상'),
             const SizedBox(height: 8),
-            _buildInfoRow(Icons.timer_outlined, '통화 시간', '${record.durationInSeconds}초'),
+            _buildGuideRow(Icons.warning_amber, Colors.orange, '주의', '확률 20% - 70%'),
+            const SizedBox(height: 8),
+            _buildGuideRow(Icons.verified_user, Colors.green, '안전', '확률 20% 미만'),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildGuideRow(IconData icon, Color color, String label, String text) {
+    return Row(
       children: [
-        Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(subtitle, style: const TextStyle(fontSize: 14, color: Colors.grey)),
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+        const Spacer(),
+        Text(text, style: TextStyle(color: Colors.grey[600])),
       ],
     );
   }
 
-  Widget _buildKeyFrameGallery(List<KeyFrame> keyFrames) {
-    return SizedBox(
-      height: 200,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: keyFrames.length,
-        itemBuilder: (context, index) {
-          final frame = keyFrames[index];
-          return GestureDetector(
-            onTap: () {
-              _openPhotoGallery(context, keyFrames, index);
-            },
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Image.network(
-                      frame.gradCamUrl ?? frame.url, // Grad-CAM이 있으면 보여주고, 없으면 원본 URL 표시
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, progress) {
-                        return progress == null ? child : const Center(child: CircularProgressIndicator());
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Center(child: Icon(Icons.error));
-                      },
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Text(
-                      '딥페이크 확률: ${(frame.probability * 100).toStringAsFixed(1)}%',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
+  Widget _buildDisclaimer() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 32.0, bottom: 16.0),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: Colors.grey, size: 18),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'AI 탐지 결과는 100% 정확하지 않을 수 있습니다. 최종 판단은 반드시 사용자 또는 담당자의 종합적인 검토가 필요합니다.',
+                style: TextStyle(fontSize: 12, color: Colors.black54, height: 1.5),
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
 
-  void _openPhotoGallery(BuildContext context, List<KeyFrame> keyFrames, int initialIndex) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(),
-          body: PhotoViewGallery.builder(
-            itemCount: keyFrames.length,
-            builder: (context, index) {
-              final frame = keyFrames[index];
-              // Grad-CAM URL이 있으면 사용하고, 없으면 원본 키프레임 URL을 사용합니다.
-              final imageUrl = frame.gradCamUrl ?? frame.url;
-              return PhotoViewGalleryPageOptions(
-                imageProvider: NetworkImage(imageUrl),
-                minScale: PhotoViewComputedScale.contained * 0.8,
-                maxScale: PhotoViewComputedScale.covered * 2,
-              );
-            },
-            scrollPhysics: const BouncingScrollPhysics(),
-            backgroundDecoration: const BoxDecoration(
-              color: Colors.black,
+  Widget _buildEnvironmentInfo(CallRecord record) {
+    final hasDeviceInfo = record.deviceInfo.entries.isNotEmpty;
+    final hasServerInfo = record.serverInfo.entries.isNotEmpty;
+
+    if (!hasDeviceInfo && !hasServerInfo) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        _buildSectionTitle('분석 환경 정보'),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Column(
+            children: [
+              if (hasDeviceInfo)
+                ..._buildTableRows(record.deviceInfo, '데이터 수집 디바이스'),
+              if (hasDeviceInfo && hasServerInfo)
+                const Divider(height: 1, indent: 16, endIndent: 16),
+              if (hasServerInfo)
+                ..._buildTableRows(record.serverInfo, '서버 분석 환경'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildTableRows(Map<String, String> data, String title) {
+    List<Widget> rows = [
+      ListTile(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      ),
+    ];
+
+    rows.addAll(data.entries.map((entry) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(entry.key, style: TextStyle(color: Colors.grey[600])),
+            const SizedBox(width: 16),
+            Flexible(
+              child: Text(
+                entry.value,
+                textAlign: TextAlign.end,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
             ),
-            pageController: PageController(initialPage: initialIndex),
+          ],
+        ),
+      );
+    }));
+
+    rows.add(const SizedBox(height: 8));
+
+    return rows;
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildInfoCard({required List<Widget> children, bool highlight = false}) {
+    return Card(
+      elevation: 2,
+      color: highlight ? Colors.blue[50] : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(padding: const EdgeInsets.all(16.0), child: Column(children: children)),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey[600])),
+          Text(value, style: TextStyle(fontWeight: FontWeight.w500, color: valueColor ?? Colors.black87)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemoCard(CallRecord record) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _isEditingMemo ? null : _enterEditMode,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _isEditingMemo ? _buildMemoEditor(record) : _buildMemoViewer(record),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMemoViewer(CallRecord record) {
+    bool hasMemo = record.userMemo != null && record.userMemo!.isNotEmpty;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 80),
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            hasMemo ? record.userMemo! : '저장된 메모가 없습니다.\n탭하여 메모를 작성하세요...',
+            style: TextStyle(color: hasMemo ? Colors.black : Colors.grey, height: 1.5),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(child: Text(hasMemo ? '수정' : '작성'), onPressed: _enterEditMode),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemoEditor(CallRecord record) {
+    return Column(
+      children: [
+        TextField(
+          controller: _memoController,
+          autofocus: true,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: '통화에 대한 내용을 자유롭게 메모하세요.',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(child: const Text('취소'), onPressed: () => _exitEditMode(record.userMemo)),
+            const SizedBox(width: 8),
+            ElevatedButton(child: const Text('저장'), onPressed: () => _saveMemo(record)),
+          ],
+        )
+      ],
+    );
+  }
+
+  Widget _buildAnalysisFrames(CallRecord record) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('주요 의심 프레임 (최대 4개)', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+        const SizedBox(height: 12),
+        Column(
+          children: record.keyFrames.map((keyFrame) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text('원본 프레임', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        _buildImageCard(keyFrame.url, keyFrame),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        const Text('Grad-CAM', style: TextStyle(fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        keyFrame.gradCamUrl != null
+                            ? _buildImageCard(keyFrame.gradCamUrl!, keyFrame)
+                            : _buildLoadingCard(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageCard(String imageUrl, KeyFrame keyFrame) {
+    final status = _DetectionStatus.fromProbability(keyFrame.probability);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: status.color, width: 3),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: AspectRatio(
+          aspectRatio: 0.8,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : const Center(child: CircularProgressIndicator()),
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.error),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+                  color: Colors.black.withAlpha(153),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(status.icon, color: status.color, size: 16),
+                      const SizedBox(width: 4),
+                      Text(status.text, style: TextStyle(color: status.color, fontWeight: FontWeight.bold, fontSize: 12)),
+                      const Spacer(),
+                      Text('${(keyFrame.probability * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoTable(CallRecord record) {
-    final allInfo = {
-      '통화 정보': {
-        '최대 딥페이크 확률': '${(record.maxFakeProbability * 100).toStringAsFixed(1)}%',
-        '평균 딥페이크 확률': '${(record.averageProbability * 100).toStringAsFixed(1)}%',
-        '딥페이크 의심 횟수': '${record.deepfakeDetections}회',
-      },
-      '디바이스 정보': record.deviceInfo,
-      '서버 정보': record.serverInfo,
-    };
-
-    return Card(
-      child: Column(
-        children: allInfo.entries.map((entry) {
-          return ExpansionTile(
-            title: Text(entry.key, style: const TextStyle(fontWeight: FontWeight.bold)),
-            initiallyExpanded: entry.key == '통화 정보',
-            children: entry.value.entries.map((item) {
-              return ListTile(
-                title: Text(item.key),
-                trailing: Text(item.value, style: const TextStyle(color: Colors.grey)),
-              );
-            }).toList(),
-          );
-        }).toList(),
+  Widget _buildLoadingCard() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey, width: 3),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: AspectRatio(
+          aspectRatio: 0.8,
+          child: Container(
+            color: Colors.grey[200],
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(width: 12),
-        Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        const Spacer(),
-        Text(value, style: const TextStyle(fontSize: 16)),
-      ],
-    );
+class _DetectionStatus {
+  final Color color;
+  final IconData icon;
+  final String text;
+
+  _DetectionStatus(this.color, this.icon, this.text);
+
+  factory _DetectionStatus.fromProbability(double p) {
+    if (p >= 0.7) return _DetectionStatus(Colors.red[700]!, Icons.gpp_bad, '위험');
+    if (p >= 0.2) return _DetectionStatus(Colors.orange, Icons.warning_amber, '주의');
+    return _DetectionStatus(Colors.green, Icons.verified_user, '안전');
   }
 }
